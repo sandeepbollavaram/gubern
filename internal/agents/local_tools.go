@@ -98,6 +98,9 @@ type LocalFSConfig struct {
 	// dirs, gubern.cue) even when RequireApproval is off. NewTrustedLocalTools
 	// sets it for the team specialists (audit F-05).
 	GateSensitive bool
+	// Policy is the operator's per-tool deny/ask policy (agents.policy),
+	// applied by RegisterLocalTools.
+	Policy ToolPolicy
 }
 
 // resolveLocal resolves p to an absolute path. Relative paths resolve against

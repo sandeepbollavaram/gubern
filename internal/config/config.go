@@ -152,7 +152,15 @@ type Observability struct {
 
 // Agents mirrors #Agents.
 type Agents struct {
-	LocalTools LocalTools `json:"local_tools"`
+	LocalTools LocalTools  `json:"local_tools"`
+	Policy     AgentPolicy `json:"policy"`
+}
+
+// AgentPolicy mirrors #AgentPolicy — per-tool deny/ask lists for the local
+// agent tools (validated against the tool names at startup).
+type AgentPolicy struct {
+	DenyTools []string `json:"deny_tools"`
+	AskTools  []string `json:"ask_tools"`
 }
 
 // LocalTools mirrors #LocalTools — workspace trust for coordinator local FS tools.

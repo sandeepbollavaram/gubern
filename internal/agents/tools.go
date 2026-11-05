@@ -987,5 +987,5 @@ func RegisterLocalTools(registry *ToolRegistry, cfg LocalFSConfig) error {
 			return err
 		}
 	}
-	return nil
+	return registry.ApplyPolicy(cfg.Policy)
 }

@@ -159,6 +159,19 @@ package vortex
 		trusted_root: ""
 		auto_mode:    false
 	}
+	policy: #AgentPolicy | *{
+		deny_tools: []
+		ask_tools:  []
+	}
+}
+
+// #AgentPolicy is the per-tool policy for the local agent tools: tools that
+// never run (and aren't offered to the model), and tools that always need an
+// approval, even read-only ones and even under Auto Mode. Names are checked
+// at startup; an unknown name refuses to start.
+#AgentPolicy: {
+	deny_tools: [...string] | *[]
+	ask_tools:  [...string] | *[]
 }
 
 // #LocalTools configures real-machine FS tools (approval-gated by default).

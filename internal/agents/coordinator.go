@@ -1173,6 +1173,13 @@ func (c *Coordinator) HasPendingApproval(session string) bool {
 // flag cleared.
 func executeApprovedLocal(ctx context.Context, tool Tool, params map[string]any) (any, error) {
 	switch tl := tool.(type) {
+	case policyTool:
+		if tl.deny {
+			return nil, fmt.Errorf("%w: %s", ErrToolDenied, tl.inner.Name())
+		}
+		// The person approved the policy prompt; that approval also covers
+		// the tool's own gate, so they are not asked twice.
+		return executeApprovedLocal(ctx, tl.inner, params)
 	case WriteLocalFileTool:
 		tl.RequireApproval = false
 		return tl.Execute(ctx, params)

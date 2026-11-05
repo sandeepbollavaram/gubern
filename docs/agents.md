@@ -197,6 +197,29 @@ approved command. A custom `core.hooksPath` is not detected.
 Auto Mode is **not** unrestricted host access. Out-of-scope paths are denied by
 the runtime. There is still no container/namespace isolation for local tools.
 
+### Per-tool policy
+
+`agents.policy` turns local tools off or makes them always ask, for chat
+commands, `/agent` runs, Telegram and the API alike:
+
+```cue
+agents: {
+	policy: {
+		deny_tools: ["run_terminal"]          // never runs; not offered to the model
+		ask_tools:  ["read_file", "git_commit"] // always asks first
+	}
+}
+```
+
+An `ask_tools` entry needs approval even for a read-only tool and even where
+Auto Mode would skip the prompt; one approval covers both the policy and the
+tool's own gate. Tool names are checked at startup: an unknown name, or a tool
+in both lists, refuses to start (so a typo can't leave a tool enabled). The
+names are `create_project`, `edit_file`, `find_files`, `git_add`,
+`git_commit`, `git_diff`, `git_status`, `list_directory`, `read_file`,
+`run_terminal`, `search_files`, `undo` and `write_file`. Like `local_tools`,
+the policy is read at startup; restart to change it.
+
 ### Hot reload (`SIGHUP` / `gubern reload`)
 
 Config reload swaps the live `gubern.cue` in the config `Holder` (same path as

@@ -308,7 +308,13 @@ func resolveLocalFSConfig(cfg *config.Config, workDir string) (agents.LocalFSCon
 	if err != nil {
 		return agents.LocalFSConfig{}, err
 	}
-	return agents.LocalFSFromRuntime(workDir, trusted, auto), nil
+	policy := agents.ToolPolicy{Deny: cfg.Agents.Policy.DenyTools, Ask: cfg.Agents.Policy.AskTools}
+	if err := policy.Validate(); err != nil {
+		return agents.LocalFSConfig{}, err // refuse to start: a typo would leave a tool enabled
+	}
+	fs := agents.LocalFSFromRuntime(workDir, trusted, auto)
+	fs.Policy = policy
+	return fs, nil
 }
 
 func wireAgentTeam(ctx context.Context, apiSrv *api.Server, rt *agents.Runtime, gateway agents.AIGateway, notifier *messaging.Router, telegram *messaging.TelegramBot, workDir string, localFS agents.LocalFSConfig, display *startup.Display, log *slog.Logger) {

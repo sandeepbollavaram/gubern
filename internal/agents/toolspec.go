@@ -132,10 +132,14 @@ func SpecFor(t Tool) (ToolSpec, bool) {
 // Specs returns the specs of every registered tool that has one, sorted by
 // name. Tools without a spec can't be offered to a model.
 func (r *ToolRegistry) Specs() []ToolSpec {
+	// Tools disabled by agents.policy are not offered to the model at all.
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]ToolSpec, 0, len(r.tools))
 	for _, t := range r.tools {
+		if pt, ok := t.(policyTool); ok && pt.deny {
+			continue
+		}
 		if s, ok := SpecFor(t); ok {
 			out = append(out, s)
 		}

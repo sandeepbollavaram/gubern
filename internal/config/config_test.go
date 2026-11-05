@@ -381,3 +381,22 @@ func TestResolvePath_LegacyConfigFile(t *testing.T) {
 		t.Errorf("explicit: %s", got)
 	}
 }
+
+func TestLoad_AgentPolicy(t *testing.T) {
+	p := writeConfig(t, validConfig+"\nagents: { policy: { deny_tools: [\"run_terminal\"], ask_tools: [\"read_file\", \"git_commit\"] } }\n")
+	src, _ := os.ReadFile(p)
+	cfg, err := loadFromBytes(p, src, schemaSource(t), map[string]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := cfg.Agents.Policy; len(got.DenyTools) != 1 || got.DenyTools[0] != "run_terminal" || len(got.AskTools) != 2 {
+		t.Errorf("policy = %+v", got)
+	}
+	// Absent section → empty lists, local_tools defaults intact.
+	p = writeConfig(t, validConfig)
+	src, _ = os.ReadFile(p)
+	cfg, err = loadFromBytes(p, src, schemaSource(t), map[string]string{})
+	if err != nil || len(cfg.Agents.Policy.DenyTools) != 0 || len(cfg.Agents.Policy.AskTools) != 0 {
+		t.Errorf("default policy = %+v, err = %v", cfg.Agents.Policy, err)
+	}
+}
