@@ -822,6 +822,9 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	var ae *ApprovalError
 	if !errors.As(err, &ae) {
 		if err != nil {
+			if errors.Is(err, ErrToolDenied) {
+				c.auditAction(ctx, "agent.policy.denied", session, name, map[string]any{"via": "command"})
+			}
 			emit("⚠ " + err.Error())
 			stepEnd("failed", err.Error())
 			return nil, err

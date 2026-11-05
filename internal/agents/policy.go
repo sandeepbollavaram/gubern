@@ -87,6 +87,16 @@ func toSet(names []string) map[string]bool {
 	return m
 }
 
+// toolDenied reports whether name is registered but disabled by the policy.
+func toolDenied(r *ToolRegistry, name string) bool {
+	t, err := r.Get(name)
+	if err != nil {
+		return false
+	}
+	pt, ok := t.(policyTool)
+	return ok && pt.deny
+}
+
 // policyTool enforces the policy around one tool. An "ask" tool answers with
 // the same ApprovalError a write does, so every existing approval path
 // (TUI/API pending actions, Telegram, the loop's approver) handles it; once

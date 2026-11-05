@@ -75,7 +75,7 @@ const (
 type LoopStep struct {
 	Tool     string
 	Args     map[string]any
-	Outcome  string // "ok", "invalid", "rejected", "error", "unknown_tool", "skipped"
+	Outcome  string // "ok", "invalid", "rejected", "error", "unknown_tool", "denied", "skipped"
 	Observed string // what the model was shown
 }
 
@@ -200,6 +200,14 @@ func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec,
 	step := LoopStep{Tool: call.Name, Args: call.Arguments}
 	spec, ok := specs[call.Name]
 	if !ok {
+		if cfg.Tools != nil && toolDenied(cfg.Tools, call.Name) {
+			// Hidden from the model, but asked for anyway: say why, and
+			// record it, since it shows what the model was trying to do.
+			loopAudit(ctx, cfg, "agent.policy.denied", call.Name, map[string]any{"via": "loop"})
+			step.Outcome, step.Observed = "denied", fmt.Sprintf("error: %s is disabled by policy (agents.policy.deny_tools)", call.Name)
+			emit("⛔ " + call.Name + " is disabled by policy")
+			return step
+		}
 		step.Outcome, step.Observed = "unknown_tool", fmt.Sprintf("error: no tool named %q is available", call.Name)
 		return step
 	}

@@ -47,9 +47,14 @@ func TestPolicy_DenyBlocksAndHidesTheTool(t *testing.T) {
 	}
 	// In a loop run the model can't call it either.
 	m := &scriptedModel{replies: []llm.ToolChatResult{call("c1", "run_terminal", map[string]any{"command": "echo hi"})}}
-	res := RunLoop(context.Background(), LoopConfig{Model: m, Tools: reg, Approval: func(context.Context, ApprovalRequest) bool { return true }}, "run it")
-	if res.Steps[0].Outcome != "unknown_tool" {
-		t.Errorf("outcome = %q", res.Steps[0].Outcome)
+	audit := &approvalAuditRecorder{}
+	res := RunLoop(context.Background(), LoopConfig{Model: m, Tools: reg, Audit: audit,
+		Approval: func(context.Context, ApprovalRequest) bool { return true }}, "run it")
+	if res.Steps[0].Outcome != "denied" || !strings.Contains(res.Steps[0].Observed, "disabled by policy") {
+		t.Errorf("step = %+v", res.Steps[0])
+	}
+	if len(audit.entries) != 1 || audit.entries[0] != "agent.policy.denied|run_terminal" {
+		t.Errorf("audit = %v", audit.entries)
 	}
 }
 
@@ -139,5 +144,24 @@ func TestPolicy_WrapperKeepsSpecAndSideEffect(t *testing.T) {
 	}
 	if s, ok := SpecFor(w); !ok || s.Name != "write_file" || s.Parameters == nil {
 		t.Errorf("spec lost: %+v", s)
+	}
+}
+
+// TestPolicy_DeniedCommandIsAudited: a chat command for a denied tool is
+// refused and recorded in the audit log.
+func TestPolicy_DeniedCommandIsAudited(t *testing.T) {
+	reg, dir := policyRegistry(t, LocalFSConfig{}, ToolPolicy{Deny: []string{"run_terminal"}})
+	rec := &approvalAuditRecorder{}
+	c, err := NewCoordinator(CoordinatorConfig{Bus: NewBus(), AIGateway: StubAIGateway{}, LocalTools: reg, WorkingDir: dir, Audit: rec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	_, err = c.ExecuteLocalTool(context.Background(), "pd1", "run_terminal", map[string]any{"command": "echo hi"}, func(s string) { lines = append(lines, s) })
+	if !errors.Is(err, ErrToolDenied) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(rec.entries) != 1 || rec.entries[0] != "agent.policy.denied|run_terminal" {
+		t.Errorf("audit = %v", rec.entries)
 	}
 }
