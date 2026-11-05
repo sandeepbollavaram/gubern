@@ -2238,12 +2238,13 @@ func (s *subAgent) Tools() []string { return s.tools }
 // tools. Progress lines stream to sf when the caller streams.
 func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task string, sf *streamFilter) (string, error) {
 	userLine := "/agent " + task // as the user typed it, for history
-	check, task, err := parseAgentFlags(task)
+	flags, task, err := parseAgentFlags(task)
+	check := flags.check
 	if err != nil {
-		return "Usage: /agent [--check \"<command>\"] <task>  (" + err.Error() + ")", nil
+		return "Usage: /agent [--read-only] [--check \"<command>\"] <task>  (" + err.Error() + ")", nil
 	}
 	if task == "" {
-		return "Usage: /agent [--check \"<command>\"] <task>", nil
+		return "Usage: /agent [--read-only] [--check \"<command>\"] <task>", nil
 	}
 	if c.cfg.LocalTools == nil {
 		return "No local tools are configured, so /agent isn't available.", nil
@@ -2270,6 +2271,9 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 	} else {
 		emit("ℹ This AI gateway has no native tool calling; using a text protocol (less reliable).")
 	}
+	if flags.readOnly {
+		emit("ℹ Read-only run: the model can read and search, not change files or run commands.")
+	}
 	catalog, skillFiles := c.skillCatalog()
 	approver := c.loopApprover(sessionID, emit)
 	var verify func(context.Context) (bool, string)
@@ -2285,6 +2289,7 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		Reference:  catalog,
 		SkillFiles: skillFiles,
 		Verify:     verify,
+		ReadOnly:   flags.readOnly,
 		Session:    sessionID,
 		Timeout:    AgentRunTimeout - 5*time.Second,
 		// A runaway run stops here rather than at the gateway's daily cap.
@@ -2376,27 +2381,50 @@ func (c *Coordinator) auditRun(ctx context.Context, sessionID, task, check strin
 	c.auditAction(actx, "agent.run.finished", sessionID, "agent", detail)
 }
 
-// parseAgentFlags splits leading /agent options from the task. The only one
-// is --check "<command>" (or --check=<command>, or an unquoted single word):
-// the completion check the run must pass to count as verified.
-func parseAgentFlags(task string) (check, rest string, err error) {
-	rest = strings.TrimSpace(task)
-	switch {
-	case strings.HasPrefix(rest, "--check="):
-		rest = strings.TrimPrefix(rest, "--check=")
-	case strings.HasPrefix(rest, "--check "):
-		rest = strings.TrimSpace(strings.TrimPrefix(rest, "--check "))
-	default:
-		return "", rest, nil
+// agentFlags are the leading /agent options.
+type agentFlags struct {
+	check    string // --check "<command>": the completion check
+	readOnly bool   // --read-only: only read tools are offered
+}
+
+// parseAgentFlags splits leading /agent options from the task, in any
+// order: --read-only, and --check "<command>" (or --check=<command>, or an
+// unquoted single word), the completion check the run must pass.
+func parseAgentFlags(task string) (agentFlags, string, error) {
+	var f agentFlags
+	rest := strings.TrimSpace(task)
+	for {
+		switch {
+		case rest == "--read-only" || strings.HasPrefix(rest, "--read-only "):
+			f.readOnly = true
+			rest = strings.TrimSpace(strings.TrimPrefix(rest, "--read-only"))
+			continue
+		case strings.HasPrefix(rest, "--check=") || strings.HasPrefix(rest, "--check "):
+			if f.check != "" {
+				return f, "", errors.New("--check given twice")
+			}
+			check, after, err := parseCheckValue(strings.TrimSpace(rest[len("--check"):]))
+			if err != nil {
+				return f, "", err
+			}
+			f.check, rest = check, after
+			continue
+		}
+		return f, rest, nil
 	}
-	if strings.HasPrefix(rest, "\"") {
-		end := strings.Index(rest[1:], "\"")
+}
+
+// parseCheckValue reads the value after --check (with or without "=").
+func parseCheckValue(v string) (check, rest string, err error) {
+	v = strings.TrimPrefix(v, "=")
+	if strings.HasPrefix(v, "\"") {
+		end := strings.Index(v[1:], "\"")
 		if end < 0 {
 			return "", "", errors.New("unclosed quote in --check")
 		}
-		check, rest = rest[1:1+end], rest[2+end:]
+		check, rest = v[1:1+end], v[2+end:]
 	} else {
-		check, rest, _ = strings.Cut(rest, " ")
+		check, rest, _ = strings.Cut(v, " ")
 	}
 	check = strings.TrimSpace(check)
 	if check == "" {

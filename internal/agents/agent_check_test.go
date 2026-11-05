@@ -11,19 +11,31 @@ import (
 func TestParseAgentFlags(t *testing.T) {
 	cases := []struct {
 		in, check, rest string
-		bad             bool
+		bad, readOnly   bool
 	}{
-		{"fix the test", "", "fix the test", false},
-		{`--check "go test ./..." fix the test`, "go test ./...", "fix the test", false},
-		{"--check=make fix it", "make", "fix it", false},
-		{"--check make fix it", "make", "fix it", false},
-		{`--check "unclosed fix`, "", "", true},
-		{`--check "" fix`, "", "", true},
+		{"fix the test", "", "fix the test", false, false},
+		{`--check "go test ./..." fix the test`, "go test ./...", "fix the test", false, false},
+		{"--check=make fix it", "make", "fix it", false, false},
+		{"--check make fix it", "make", "fix it", false, false},
+		{`--check "unclosed fix`, "", "", true, false},
+		{`--check "" fix`, "", "", true, false},
+		{"--read-only explain main.go", "", "explain main.go", false, true},
+		{`--read-only --check "go vet ./..." look`, "go vet ./...", "look", false, true},
+		{`--check make --read-only look`, "make", "look", false, true},
+		{"--read-only", "", "", false, true},
+		{"--read-onlyx look", "", "--read-onlyx look", false, false},
+		{"--check a --check b x", "", "", true, false},
 	}
 	for _, tc := range cases {
-		check, rest, err := parseAgentFlags(tc.in)
-		if (err != nil) != tc.bad || check != tc.check || rest != tc.rest {
-			t.Errorf("%q → check=%q rest=%q err=%v", tc.in, check, rest, err)
+		f, rest, err := parseAgentFlags(tc.in)
+		if tc.bad {
+			if err == nil {
+				t.Errorf("%q: want error", tc.in)
+			}
+			continue
+		}
+		if err != nil || f.check != tc.check || f.readOnly != tc.readOnly || rest != tc.rest {
+			t.Errorf("%q → %+v rest=%q err=%v", tc.in, f, rest, err)
 		}
 	}
 }

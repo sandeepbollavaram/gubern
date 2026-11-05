@@ -68,6 +68,18 @@ approval gate, like any command). If it fails, the output goes back to the
 model, up to three times. The run ends with "✓ Verified" or "✗ Not verified";
 without a check, the answer is only the model's claim.
 
+To ask about code without letting the model change anything:
+
+```
+/agent --read-only explain how the retry loop in main.go backs off
+```
+
+A read-only run offers the model only the read tools (read, list, search,
+git status and diff). Writes, commands and git changes are not offered, and
+if the model asks for one anyway it is refused without an approval prompt and
+recorded as `agent.policy.denied` in the audit log. `--read-only` and
+`--check` can be combined; the check is your command, so it still runs.
+
 Not every model can drive this loop. `gubern ai probe` sends each configured
 provider a few small requests and checks that it calls a tool, uses typed
 arguments, reads a tool result back and ignores an instruction planted in a

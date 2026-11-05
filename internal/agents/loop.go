@@ -43,6 +43,9 @@ type LoopConfig struct {
 	// check never passed ends Verified=false: the answer is a claim only.
 	Verify    func(ctx context.Context) (ok bool, output string)
 	MaxVerify int // default 3
+	// ReadOnly offers the model only read tools (risk class "read"): no
+	// writes, commands or git changes. Anything else it asks for is refused.
+	ReadOnly bool
 	// SkillFiles maps catalogued SKILL.md paths (see SkillKey) to the skill,
 	// so reading one is recorded as skill use in the audit log.
 	SkillFiles map[string]SkillRef
@@ -121,6 +124,9 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 	var defs []llm.ToolDef
 	if cfg.Tools != nil {
 		for _, s := range cfg.Tools.Specs() {
+			if cfg.ReadOnly && (s.Risk != RiskRead || s.SideEffect) {
+				continue
+			}
 			specs[s.Name] = s
 			defs = append(defs, llm.ToolDef{Name: s.Name, Description: s.Description, Parameters: s.Parameters})
 		}
@@ -200,6 +206,14 @@ func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec,
 	step := LoopStep{Tool: call.Name, Args: call.Arguments}
 	spec, ok := specs[call.Name]
 	if !ok {
+		if cfg.ReadOnly && cfg.Tools != nil {
+			if _, err := cfg.Tools.Get(call.Name); err == nil {
+				loopAudit(ctx, cfg, "agent.policy.denied", call.Name, map[string]any{"via": "read-only"})
+				step.Outcome, step.Observed = "denied", fmt.Sprintf("error: %s is not available in a read-only run", call.Name)
+				emit("⛔ " + call.Name + " is not available in a read-only run")
+				return step
+			}
+		}
 		if cfg.Tools != nil && toolDenied(cfg.Tools, call.Name) {
 			// Hidden from the model, but asked for anyway: say why, and
 			// record it, since it shows what the model was trying to do.

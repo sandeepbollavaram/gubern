@@ -100,6 +100,7 @@ var agentsHelp = HelpContent{
 		}},
 		{Title: "Slash commands", Items: []HelpItem{
 			{Key: "/agent <task>", Action: "Let the model plan and use tools (asks before changes)"},
+			{Key: "/agent --read-only <task>", Action: "Same, but the model can only read and search"},
 			{Key: "/ls [path]", Action: "List files"},
 			{Key: "/read <file>", Action: "Read a file"},
 			{Key: "/run <cmd>", Action: "Run a command"},
