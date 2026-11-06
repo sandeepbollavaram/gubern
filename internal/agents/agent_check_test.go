@@ -131,6 +131,39 @@ func TestAgentCommand_RunFinishedIsAudited(t *testing.T) {
 	}
 }
 
+// TestAgentCommand_RunStartedPairsWithFinished: a run's started and finished
+// entries share one run id, so an interrupted run (started, never finished)
+// can be found in the audit log.
+func TestAgentCommand_RunStartedPairsWithFinished(t *testing.T) {
+	c, _ := agentCoord(t, toolGateway{writeScript()}, func(context.Context, ApprovalRequest) bool { return true })
+	rec := &approvalAuditRecorder{}
+	c.cfg.Audit = rec
+	if _, err := c.HandleMessage(context.Background(), `/agent --read-only look around`, "rs1"); err != nil {
+		t.Fatal(err)
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	var started, finished map[string]any
+	for i, e := range rec.entries {
+		switch {
+		case strings.HasPrefix(e, "agent.run.started|"):
+			started = rec.details[i]
+		case strings.HasPrefix(e, "agent.run.finished|"):
+			finished = rec.details[i]
+		}
+	}
+	if started == nil || finished == nil {
+		t.Fatalf("entries = %v", rec.entries)
+	}
+	id, _ := started["run"].(string)
+	if id == "" || finished["run"] != id {
+		t.Errorf("run ids: started %v, finished %v", started["run"], finished["run"])
+	}
+	if started["read_only"] != true || started["task"] != "look around" || started["session"] != "rs1" {
+		t.Errorf("started = %v", started)
+	}
+}
+
 // TestAgentCommand_RunIsInHistory: an /agent run is recorded in the
 // session's conversation history (it used to be missing from /history).
 func TestAgentCommand_RunIsInHistory(t *testing.T) {

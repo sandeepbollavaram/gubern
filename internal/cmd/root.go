@@ -129,6 +129,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newWatchdogCommand())
 	root.AddCommand(newAICommand())
 	root.AddCommand(newSkillsCommand())
+	root.AddCommand(newRunsCommand())
 
 	return root
 }

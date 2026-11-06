@@ -80,6 +80,12 @@ if the model asks for one anyway it is refused without an approval prompt and
 recorded as `agent.policy.denied` in the audit log. `--read-only` and
 `--check` can be combined; the check is your command, so it still runs.
 
+`gubern runs` lists recent runs from the audit log: when each started, its
+session, how it ended (`done`, `budget_exceeded`, `cancelled` when the client
+disconnected, `model_error`) and whether its `--check` passed. A run marked
+`interrupted` started but never finished because the server stopped or crashed
+during it; look at what it changed before running it again.
+
 Not every model can drive this loop. `gubern ai probe` sends each configured
 provider a few small requests and checks that it calls a tool, uses typed
 arguments, reads a tool result back and ignores an instruction planted in a

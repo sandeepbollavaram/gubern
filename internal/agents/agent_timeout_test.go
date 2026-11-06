@@ -67,3 +67,19 @@ func TestChat_StillIgnoresTheCallerContext(t *testing.T) {
 		t.Fatalf("chat with a cancelled caller: %v", err)
 	}
 }
+
+// TestLoop_CancelIsNotABudgetStop: a caller cancelling the run is reported as
+// "cancelled"; the run's own deadline is still a budget stop.
+func TestLoop_CancelIsNotABudgetStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if res := RunLoop(ctx, LoopConfig{Model: &scriptedModel{}}, "x"); res.Stop != LoopCancelled {
+		t.Errorf("cancelled caller: stop = %q", res.Stop)
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+	if res := RunLoop(ctx, LoopConfig{Model: &scriptedModel{}}, "x"); res.Stop != LoopBudgetExceeded {
+		t.Errorf("deadline: stop = %q", res.Stop)
+	}
+}

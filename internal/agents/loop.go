@@ -72,7 +72,18 @@ const (
 	LoopDone           LoopStop = "done"            // model answered without calling tools
 	LoopBudgetExceeded LoopStop = "budget_exceeded" // MaxSteps, MaxTokens or Timeout reached
 	LoopModelError     LoopStop = "model_error"     // the gateway failed
+	LoopCancelled      LoopStop = "cancelled"       // the caller went away (client disconnect, shutdown)
 )
+
+// ctxStop names why ctx ended the run: its own deadline (a budget) or the
+// caller cancelling it. Calling a client disconnect a budget stop sent
+// whoever read the audit log looking for a limit that was never reached.
+func ctxStop(ctx context.Context) LoopStop {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return LoopCancelled
+	}
+	return LoopBudgetExceeded
+}
 
 // LoopStep records one tool call and its outcome.
 type LoopStep struct {
@@ -140,14 +151,14 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 	var res LoopResult
 	for res.Turns < cfg.MaxSteps {
 		if ctx.Err() != nil {
-			res.Stop, res.Err = LoopBudgetExceeded, ctx.Err()
+			res.Stop, res.Err = ctxStop(ctx), ctx.Err()
 			return res
 		}
 		res.Turns++
 		reply, err := cfg.Model.ChatWithTools(ctx, cfg.System, msgs, defs)
 		if err != nil {
 			if ctx.Err() != nil {
-				res.Stop, res.Err = LoopBudgetExceeded, ctx.Err()
+				res.Stop, res.Err = ctxStop(ctx), ctx.Err()
 			} else {
 				res.Stop, res.Err = LoopModelError, err
 			}

@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -2274,6 +2275,8 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 	if flags.readOnly {
 		emit("ℹ Read-only run: the model can read and search, not change files or run commands.")
 	}
+	runID := newRunID()
+	c.auditRunStarted(ctx, sessionID, runID, task, check, flags.readOnly)
 	catalog, skillFiles := c.skillCatalog()
 	approver := c.loopApprover(sessionID, emit)
 	var verify func(context.Context) (bool, string)
@@ -2296,7 +2299,7 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		MaxTokens: 250_000,
 		Emit:      emit,
 	}, task)
-	c.auditRun(ctx, sessionID, task, check, res)
+	c.auditRun(ctx, sessionID, runID, task, check, res)
 
 	// The final line goes through emit too: when the caller streams, the
 	// streamed lines are the reply, so an answer only in the return value
@@ -2312,6 +2315,8 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		}
 	case LoopBudgetExceeded:
 		emit(fmt.Sprintf("Stopped: budget reached after %d model turns (%v).", res.Turns, res.Err))
+	case LoopCancelled:
+		emit("Stopped: the run was cancelled (client disconnected or server stopping).")
 	default:
 		emit("Stopped: " + errString(res.Err))
 	}
@@ -2358,13 +2363,13 @@ func (c *Coordinator) skillCatalog() (string, map[string]SkillRef) {
 // it gives the audit trail one place that says what was asked, how far the
 // run got and whether its completion check passed. The task text is
 // truncated like other free text in the log.
-func (c *Coordinator) auditRun(ctx context.Context, sessionID, task, check string, res LoopResult) {
+func (c *Coordinator) auditRun(ctx context.Context, sessionID, runID, task, check string, res LoopResult) {
 	outcomes := map[string]int{}
 	for _, st := range res.Steps {
 		outcomes[st.Outcome]++
 	}
 	detail := map[string]any{
-		"task": truncateForAudit(task), "stop": string(res.Stop), "turns": res.Turns,
+		"run": runID, "task": truncateForAudit(task), "stop": string(res.Stop), "turns": res.Turns,
 		"tokens": res.Tokens, "tool_calls": len(res.Steps), "outcomes": outcomes,
 	}
 	if check != "" {
@@ -2379,6 +2384,26 @@ func (c *Coordinator) auditRun(ctx context.Context, sessionID, task, check strin
 	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	c.auditAction(actx, "agent.run.finished", sessionID, "agent", detail)
+}
+
+// auditRunStarted records that a /agent run began. With agent.run.finished
+// (same "run" id) it shows which runs ended and which were cut off: a run
+// that started but never finished was interrupted by a crash or restart.
+func (c *Coordinator) auditRunStarted(ctx context.Context, sessionID, runID, task, check string, readOnly bool) {
+	detail := map[string]any{"run": runID, "task": truncateForAudit(task), "read_only": readOnly}
+	if check != "" {
+		detail["check"] = truncateForAudit(check)
+	}
+	c.auditAction(ctx, "agent.run.started", sessionID, "agent", detail)
+}
+
+// newRunID returns a short random id that ties a run's audit entries together.
+func newRunID() string {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("r%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // agentFlags are the leading /agent options.
