@@ -201,3 +201,28 @@ func TestPolicy_CoversSubAgentTools(t *testing.T) {
 		t.Errorf("approved run_command result = %v", res)
 	}
 }
+
+// TestPolicy_CoversTeamSpecialists: the team-mode registry, whose file tools
+// skip the approval prompt, still honours agents.policy.
+func TestPolicy_CoversTeamSpecialists(t *testing.T) {
+	dir := t.TempDir()
+	reg, err := NewTrustedToolRegistry(LocalFSConfig{Root: dir, Policy: ToolPolicy{Deny: []string{"write_file"}, Ask: []string{"edit_file"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, _ := reg.Get("write_file")
+	if _, err := w.Execute(context.Background(), map[string]any{"path": "a.txt", "content": "x"}); !errors.Is(err, ErrToolDenied) {
+		t.Errorf("denied write_file in team mode: err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.txt")); !os.IsNotExist(err) {
+		t.Error("file written despite the deny policy")
+	}
+	e, _ := reg.Get("edit_file")
+	var ae *ApprovalError
+	if _, err := e.Execute(context.Background(), map[string]any{"path": "a.txt", "old_str": "x", "new_str": "y"}); !errors.As(err, &ae) {
+		t.Errorf("ask edit_file in team mode: err = %v", err)
+	}
+	if _, err := NewTrustedToolRegistry(LocalFSConfig{Root: dir, Policy: ToolPolicy{Deny: []string{"nope"}}}); err == nil {
+		t.Error("unknown policy name accepted")
+	}
+}

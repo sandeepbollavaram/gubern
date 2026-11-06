@@ -612,13 +612,18 @@ func NewTrustedLocalTools(cfg LocalFSConfig) []Tool {
 }
 
 // NewTrustedToolRegistry builds a ToolRegistry pre-loaded with the trusted
-// local tools for a specialist agent.
+// local tools for a specialist agent. agents.policy applies here too: a tool
+// the operator denied must not come back through team mode, and an "ask"
+// tool keeps its prompt even though the team task was approved as a whole.
 func NewTrustedToolRegistry(cfg LocalFSConfig) (*ToolRegistry, error) {
 	reg := NewToolRegistry()
 	for _, t := range NewTrustedLocalTools(cfg) {
 		if err := reg.Register(t); err != nil {
 			return nil, err
 		}
+	}
+	if err := reg.ApplyPolicy(cfg.Policy); err != nil {
+		return nil, err
 	}
 	return reg, nil
 }
