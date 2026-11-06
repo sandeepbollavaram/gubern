@@ -1869,6 +1869,12 @@ func buildAgentRuntime(ctx context.Context, log *slog.Logger, apiAddr string, au
 		log.Warn("agent runtime disabled: tool registration failed", "err", err)
 		return nil
 	}
+	// agents.policy covers the sub-agent tools too (http_get, run_command,
+	// vortex_api, ...). It was validated at startup, so an error is a bug.
+	if err := registry.ApplyPolicy(localFS.Policy); err != nil {
+		log.Warn("agent runtime disabled: agents.policy", "err", err)
+		return nil
+	}
 	sandboxed := agents.NewSandboxedRegistry(registry, sandboxBase, agents.DefaultAllowedCommands, bus)
 	if auditLog != nil {
 		sandboxed = sandboxed.WithAudit(auditLog, "coordinator")

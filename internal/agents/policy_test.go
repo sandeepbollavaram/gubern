@@ -165,3 +165,39 @@ func TestPolicy_DeniedCommandIsAudited(t *testing.T) {
 		t.Errorf("audit = %v", rec.entries)
 	}
 }
+
+// TestPolicy_CoversSubAgentTools: agents.policy applies to the sub-agent
+// tools too, and an approved "ask" tool runs once instead of asking again.
+func TestPolicy_CoversSubAgentTools(t *testing.T) {
+	if err := (ToolPolicy{Deny: []string{"http_get", "vortex_api"}, Ask: []string{"run_command"}}).Validate(); err != nil {
+		t.Fatalf("sub-agent tool names rejected: %v", err)
+	}
+	reg := NewToolRegistry()
+	sandbox := t.TempDir()
+	if err := RegisterBuiltins(reg, sandbox, []string{"go"}, nil, "http://127.0.0.1:1", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.ApplyPolicy(ToolPolicy{Deny: []string{"http_get"}, Ask: []string{"run_command"}}); err != nil {
+		t.Fatal(err)
+	}
+	sb := NewSandboxedRegistry(reg, sandbox, []string{"go"}, nil)
+	ctx := context.Background()
+	if _, err := sb.Execute(ctx, "http_get", map[string]any{"url": "https://example.com"}); !errors.Is(err, ErrToolDenied) {
+		t.Errorf("denied http_get: err = %v", err)
+	}
+	if _, err := sb.ExecuteApproved(ctx, "http_get", map[string]any{"url": "https://example.com"}); !errors.Is(err, ErrToolDenied) {
+		t.Errorf("approved denied http_get: err = %v", err)
+	}
+	args := map[string]any{"command": "go", "args": []string{"version"}}
+	var ae *ApprovalError
+	if _, err := sb.Execute(ctx, "run_command", args); !errors.As(err, &ae) {
+		t.Fatalf("ask run_command: err = %v", err)
+	}
+	res, err := sb.ExecuteApproved(ctx, "run_command", args)
+	if err != nil {
+		t.Fatalf("approved run_command: %v", err)
+	}
+	if out, _ := res.(map[string]any); out["exit_code"] != 0 || !strings.Contains(out["stdout"].(string), "go version") {
+		t.Errorf("approved run_command result = %v", res)
+	}
+}

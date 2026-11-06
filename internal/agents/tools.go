@@ -933,6 +933,15 @@ func (s *SandboxedToolRegistry) ExecuteApproved(ctx context.Context, name string
 	if err != nil {
 		return nil, err
 	}
+	if pt, ok := tool.(policyTool); ok {
+		if pt.deny {
+			return nil, fmt.Errorf("%w: %s", ErrToolDenied, name)
+		}
+		// The approval answered the policy prompt; it also covers the
+		// tool's own gate, so run the wrapped tool (otherwise an "ask"
+		// tool asked again forever).
+		tool = pt.inner
+	}
 	if rc, ok := tool.(RunCommandTool); ok {
 		// Mark this specific execution as human-approved rather than clearing
 		// the gate flag: `approved` is unexported, so release builds can treat

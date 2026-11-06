@@ -22,10 +22,23 @@ type ToolPolicy struct {
 // ErrToolDenied means a tool is disabled by agents.policy.deny_tools.
 var ErrToolDenied = errors.New("agents: tool disabled by agents.policy.deny_tools")
 
-// KnownToolNames lists the local tool names a policy may refer to.
+// subAgentToolNames are the sub-agent tools (RegisterBuiltins) that have no
+// local counterpart; write_file and read_file share their local names, so a
+// policy entry for those covers both.
+var subAgentToolNames = []string{"http_get", "run_command", "vortex_api", "send_message", "lsp_diagnostics"}
+
+// KnownToolNames lists the tool names a policy may refer to: the local tools
+// and the sub-agent tools.
 func KnownToolNames() []string {
-	names := make([]string, 0, len(builtinSpecs))
+	seen := map[string]bool{}
 	for n := range builtinSpecs {
+		seen[n] = true
+	}
+	for _, n := range subAgentToolNames {
+		seen[n] = true
+	}
+	names := make([]string, 0, len(seen))
+	for n := range seen {
 		names = append(names, n)
 	}
 	sort.Strings(names)
