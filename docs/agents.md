@@ -217,8 +217,9 @@ the runtime. There is still no container/namespace isolation for local tools.
 
 ### Per-tool policy
 
-`agents.policy` turns local tools off or makes them always ask, for chat
-commands, `/agent` runs, Telegram and the API alike:
+`agents.policy` turns tools off or makes them always ask, for chat commands,
+`/agent` runs, team-mode specialists, background sub-agents, Telegram and the
+API alike:
 
 ```cue
 agents: {
