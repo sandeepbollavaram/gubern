@@ -87,6 +87,10 @@ interface WireSkill {
   pinned?: boolean;
   tampered?: boolean;
   source?: string;
+  display_name?: string;
+  tags?: string[];
+  evals?: string;
+  sidecar_error?: string;
 }
 
 const skillFromWire = (s: WireSkill): Skill => ({
@@ -102,6 +106,10 @@ const skillFromWire = (s: WireSkill): Skill => ({
   pinned: s.pinned,
   tampered: s.tampered,
   source: s.source,
+  displayName: s.display_name,
+  tags: s.tags,
+  evals: s.evals,
+  sidecarError: s.sidecar_error,
 });
 
 interface WireRun {

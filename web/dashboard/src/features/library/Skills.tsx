@@ -215,7 +215,29 @@ function SkillDetail({ name }: { name: string }) {
     <article className="rounded-xl border border-border bg-surface">
       <header className="flex flex-wrap items-start gap-3 border-b border-border p-4">
         <div className="min-w-0 flex-1">
-          <h2 className="font-mono text-[15px] font-semibold">{s.name}</h2>
+          {s.displayName && (
+            <p className="text-[15px] font-semibold">{s.displayName}</p>
+          )}
+          <h2
+            className={cx(
+              "font-mono font-semibold",
+              s.displayName ? "text-[12px] text-muted" : "text-[15px]",
+            )}
+          >
+            {s.name}
+          </h2>
+          {!!s.tags?.length && (
+            <p className="mt-1 flex flex-wrap gap-1">
+              {s.tags.map((t) => (
+                <span
+                  key={t}
+                  className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted"
+                >
+                  {t}
+                </span>
+              ))}
+            </p>
+          )}
           <p className="mt-1 text-[13px] text-muted">{s.description}</p>
         </div>
         {s.tampered ? (
@@ -285,6 +307,23 @@ function SkillDetail({ name }: { name: string }) {
         {s.source && (
           <Field label="Source" wide>
             <span className="break-all font-mono text-[12px]">{s.source}</span>
+          </Field>
+        )}
+        <Field label="Evals">
+          {s.evals ? (
+            <span
+              className="font-mono text-[12px]"
+              title="Run: gubern skills eval"
+            >
+              {s.evals}
+            </span>
+          ) : (
+            <span className="text-muted">None</span>
+          )}
+        </Field>
+        {s.sidecarError && (
+          <Field label="Gubern sidecar" wide>
+            <span className="text-danger">{s.sidecarError}</span>
           </Field>
         )}
         <Field label="Asks for tools" wide>

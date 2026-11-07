@@ -92,6 +92,11 @@ export interface Skill {
   /** Pinned, but its files changed since approval: not offered to agents. */
   tampered?: boolean;
   source?: string;
+  /** From the Gubern sidecar (agents/gubern.yaml). */
+  displayName?: string;
+  tags?: string[];
+  evals?: string;
+  sidecarError?: string;
 }
 
 /** A fetched skill waiting for someone to approve installing it. */
