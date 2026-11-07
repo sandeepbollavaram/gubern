@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/sandeepbollavaram/vortex/internal/llm"
+	agentskills "github.com/sandeepbollavaram/vortex/internal/skills"
+	"github.com/sandeepbollavaram/vortex/internal/userdir"
 )
 
 // toolGateway is an AIGateway that also supports tool calling.
@@ -162,5 +164,36 @@ func TestAgentCommand_SkillCatalogInPrompt(t *testing.T) {
 	}
 	if strings.Contains(first.Content, "SECRET BODY") || strings.Contains(first.Content, "not-bad") {
 		t.Errorf("catalog leaked a body or listed an invalid skill:\n%s", first.Content)
+	}
+}
+
+// TestAgentCommand_DisabledSkillNotOffered: a skill the operator switched off
+// stays on disk but is left out of the catalog the model sees.
+func TestAgentCommand_DisabledSkillNotOffered(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("APPDATA", cfg)         // Windows
+	t.Setenv("XDG_CONFIG_HOME", cfg) // Linux
+	t.Setenv("HOME", cfg)            // macOS: ~/Library/Application Support
+	model := &scriptedModel{}
+	c, dir := agentCoord(t, toolGateway{model}, nil)
+	for _, name := range []string{"keep-me", "turned-off"} {
+		d := filepath.Join(dir, ".agents", "skills", name)
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		doc := "---\nname: " + name + "\ndescription: Skill " + name + "\n---\nbody\n"
+		if err := os.WriteFile(filepath.Join(d, "SKILL.md"), []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := agentskills.SetEnabled(agentskills.StatePath(userdir.Config()), "turned-off", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.HandleMessage(context.Background(), "/agent summarise", "s7"); err != nil {
+		t.Fatal(err)
+	}
+	first := model.seen[0][0]
+	if !strings.Contains(first.Content, "- keep-me:") || strings.Contains(first.Content, "turned-off") {
+		t.Errorf("catalog should list keep-me only:\n%s", first.Content)
 	}
 }

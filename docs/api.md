@@ -84,6 +84,28 @@ written; routed tasks (team, build, research, …) arrive as a single chunk
 when they complete. Concatenating all chunks always yields exactly the
 non-streaming `response` text.
 
+## Skills
+
+Workspace [Agent Skills](agents.md) (`SKILL.md` folders under `.agents/`,
+`.claude/` or `.opencode/skills`), the same set `/agent` offers the model.
+Skills are knowledge, never authority: reading one runs nothing, and
+`allowed_tools` is a request that policy may narrow, never a grant.
+
+```
+GET  /api/skills                  (agents:read)   → {"skills":[...],"problems":[{"path","error"}]}
+GET  /api/skills/{name}           (agents:read)   → {"skill":{...},"body":"SKILL.md instructions"}
+POST /api/skills/{name}/disable   (system:manage) → {"skill":{...,"enabled":false}}
+POST /api/skills/{name}/enable    (system:manage) → {"skill":{...,"enabled":true}}
+```
+
+A skill is `{name, description, scope, path, hash, license?, compatibility?,
+allowed_tools?, enabled}`. `path` is relative to the workspace and `hash` is
+the SHA-256 of its `SKILL.md`. A disabled skill stays on disk but is left out
+of the catalog the model sees. The switches are kept in
+`<user config>/gubern/skills-state.json`, and each change is audit-logged as
+`skill.enabled` or `skill.disabled`. A file that changed after it was listed
+is refused on read (`500`) until it is listed again.
+
 ## OpenAI-compatible API
 
 Any OpenAI-speaking tool (Claude Code, Aider, Cline, Cursor, …) can use

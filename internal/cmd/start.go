@@ -1628,6 +1628,7 @@ func wireDashboardProviders(
 	pluginRegistry *plugins.Registry,
 	policyEngine *policy.Engine,
 ) {
+	apiSrv.SetSkills(newSkillsBackend(resolveWorkingDir(), userdir.Config()))
 	apiSrv.SetStatusProvider(func() api.StatusInfo {
 		cfg := cfgMgr.Current()
 		info := api.StatusInfo{

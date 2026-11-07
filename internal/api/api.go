@@ -87,6 +87,7 @@ type Server struct {
 	// They are callbacks so this package stays decoupled from the audit, plugin,
 	// and secret subsystems.
 	statusProvider  func() StatusInfo
+	skills          SkillsBackend
 	aiCostProvider  func() AICostInfo
 	healingProvider func() HealingStatus
 	researchList    func() []ResearchReport
@@ -466,6 +467,10 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "POST /api/pairing", http.HandlerFunc(s.handlePairingCreate))
 	s.route(mux, "POST /api/stepup/challenge", http.HandlerFunc(s.handleStepUpChallenge))
 	s.route(mux, "GET /api/devices", http.HandlerFunc(s.handleDevicesList))
+	s.route(mux, "GET /api/skills", http.HandlerFunc(s.handleSkillsList))
+	s.route(mux, "GET /api/skills/{name}", http.HandlerFunc(s.handleSkillGet))
+	s.route(mux, "POST /api/skills/{name}/enable", http.HandlerFunc(s.handleSkillEnable))
+	s.route(mux, "POST /api/skills/{name}/disable", http.HandlerFunc(s.handleSkillDisable))
 	s.route(mux, "DELETE /api/devices/{id}", http.HandlerFunc(s.handleDeviceRevoke))
 	s.route(mux, "POST /api/devices/{id}/rotate", http.HandlerFunc(s.handleDeviceRotate))
 	s.route(mux, "GET /api/links", http.HandlerFunc(s.handleLinksList))

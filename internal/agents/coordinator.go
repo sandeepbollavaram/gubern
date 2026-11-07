@@ -18,6 +18,7 @@ import (
 	"time"
 
 	agentskills "github.com/sandeepbollavaram/vortex/internal/skills"
+	"github.com/sandeepbollavaram/vortex/internal/userdir"
 
 	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 	"github.com/sandeepbollavaram/vortex/internal/approvals"
@@ -2341,6 +2342,12 @@ func (c *Coordinator) skillCatalog() (string, map[string]SkillRef) {
 	found, problems := agentskills.Discover(agentskills.DefaultRoots(wd, ""))
 	for _, p := range problems {
 		slog.Warn("skipping invalid skill", "path", p.Path, "error", p.Err)
+	}
+	// Skills the operator turned off are not offered.
+	if disabled, err := agentskills.Disabled(agentskills.StatePath(userdir.Config())); err != nil {
+		slog.Warn("reading skill switches failed; offering all skills", "error", err)
+	} else {
+		found = agentskills.Enabled(found, disabled)
 	}
 	cat := agentskills.Catalog(found, wd)
 	if cat == "" {
