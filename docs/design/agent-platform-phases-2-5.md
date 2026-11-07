@@ -291,3 +291,43 @@ Still open:
 |---|---|---|---|
 | D5 | Browser rung 2 needs Node and Playwright as an optional dependency. Accept? | Yes, optional, off by default | O |
 | D7 | The hosted eval cap (USD per month) | Your call; the runner enforces it | First hosted eval |
+
+## 9. System-design check (17 concepts)
+
+Checked against the code on 2026-11-08 (repository-verified; file paths are
+where the evidence is). "Fit" says whether Gubern needs more of it now.
+
+| # | Concept | Gubern today | Gap and where it goes |
+|---|---|---|---|
+| 1 | Load balancing | Edge proxy: round-robin and least-conn for HTTP, TCP and gRPC (`internal/proxy/http/balancer.go`). AI gateway picks provider key slots by score and falls back to any working one (`internal/gateway/router.go`). | Backends are not ejected when they fail: round-robin's `RecordResult` does nothing. Add outlier ejection; small, and lands in P. |
+| 2 | Caching | In-process caches (LSP, tool output, A2A catalog). No response cache in the proxy, no prompt or semantic cache for models. | Provider prompt caching (Anthropic cache control) cuts eval and run cost. Add it with D4's hosted evals, in K. |
+| 3 | CDN | Not used. The dashboard is embedded in the binary. | Not needed. Remote access (design G) stays on a relay, not a CDN. |
+| 4 | API gateway | Yes: the edge proxy plus the AI gateway (`/v1` OpenAI-compatible) with auth, scopes, rate limits and audit. | MCP tools in N go through the same gateway rules. |
+| 5–6 | Microservices or monolith | Modular monolith in one Go binary, by decision (ADR A2). | Keep it. Splitting adds failure modes before there's load to justify them. |
+| 7 | Replication | Raft (`internal/cluster/raft.go`) replicates cluster config, but its log and snapshots are **in-memory even when a data directory is set**. Agent state (approvals, event log, identity, runs, effect ledger) is **node-local SQLite**. | No durable replication of agent state. Track P: on-disk Raft stores, then replicate or centralize approvals, the event log and identity. |
+| 8 | Partitioning | None. Namespaces are logical (tenancy), not shards. | Not needed at current scale. Revisit only if one node's SQLite becomes the limit. |
+| 9 | Message queues | In-process queues and a bus (`internal/agents/runtime.go`, `bus.go`). Nothing durable. | Phase 3 (L) adds a **durable run queue** on SQLite, with leases and at-least-once delivery fenced by the effect ledger. |
+| 10 | Rate limiting | Yes: API, keys, webhooks and pairing, using the edge-resolved IP rather than a client header. AI daily budget. | Per-principal run, token and spend limits, and per-connector call limits (N). |
+| 11 | Consistent hashing | None. | Only useful with P (pinning sessions to nodes). Not before. |
+| 12 | CAP theorem | Config is CP through Raft. Agent state is single-node, so consistent but unavailable if the node is down. | For approvals, **consistency over availability**: a decision must never be applied twice or lost. P keeps approvals CP; a read-only activity view may serve stale data. |
+| 13 | Horizontal scaling | Cluster membership exists (memberlist), but runs, approvals and streams live on the node that started them. | Can't spread agent work across nodes yet. Track P: shared store plus lease-based queue (from 9) plus session affinity. |
+| 14 | Vertical scaling | The default today. | Fine for one team or server. Document sizing (runs per CPU, SQLite on SSD). |
+| 15 | Fault tolerance | Healing checks, retries with backoff, resumable SSE (`Last-Event-ID`), the effect ledger. | Phase 3 (L): resume after restart, interrupted runs, the kill-9 gate. |
+| 16 | Circuit breaker | Only in forge and plugin hooks. None for model providers, proxy backends or (future) MCP servers. | Add a breaker per provider and per MCP server (N), and in the proxy (P). An open breaker shows on Operate and Connectors in both UIs. |
+| 17 | Event-driven architecture | Yes: the redacted, persisted run event log (milestone D) feeds SSE, the dashboard, the app and activity. | New phases add event types rather than new polling. Phase 3 turns run status into a state machine driven by these events. |
+
+### Track P: scale-out (after O, or earlier if you run more than one node)
+
+1. On-disk Raft log, stable and snapshot stores (raft-boltdb or SQLite-backed), plus a restart test.
+2. Agent state moves to a replicated store: Raft-applied approvals and identity, and a replicated or shipped event log. Approvals stay CP.
+3. A lease-based run queue across nodes, with session affinity by consistent hashing on the session id.
+4. Proxy: passive health checks, outlier ejection and a circuit breaker per backend.
+5. Gate: kill the leader during a waiting approval. The decision is applied exactly once, and the run resumes on another node.
+
+The items added to existing phases are small and go in with them:
+
+| Item | Phase |
+|---|---|
+| Prompt caching | K |
+| Durable run queue | L |
+| Circuit breakers for providers and MCP servers, per-connector rate limits | N |
