@@ -328,11 +328,11 @@ func TestTelegram_HandleCommandHooks(t *testing.T) {
 		Status: func() string { return "Gubern ok" },
 		Cost:   func() string { return "free" },
 		List:   func(string) string { return "files: a b" },
-		Approve: func(_ string, ok bool) (string, bool) {
+		Approve: func(_ context.Context, _, _ string, _ int64, ok bool) (string, bool) {
 			if ok {
-				return "✓ File created", true
+				return DecisionReply("", true, "✓ File created", nil), true
 			}
-			return "", true
+			return DecisionReply("", false, "", nil), true
 		},
 	})
 	cases := map[string]string{
@@ -361,7 +361,9 @@ func TestTelegram_RejectCommand(t *testing.T) {
 	f := newFakeTelegram(t)
 	bot := newTestBot(t, f, TelegramConfig{})
 	bot.SetCommandHooks(CommandHooks{
-		Approve: func(string, bool) (string, bool) { return "", true },
+		Approve: func(_ context.Context, _, _ string, _ int64, ok bool) (string, bool) {
+			return DecisionReply("", ok, "", nil), true
+		},
 	})
 	reply, handled := bot.handleCommand(context.Background(), 1, "/reject")
 	if !handled || !strings.Contains(reply, "Rejected") {

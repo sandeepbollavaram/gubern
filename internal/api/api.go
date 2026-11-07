@@ -57,6 +57,8 @@ type Server struct {
 	authMW func(http.Handler) http.Handler
 	keys   *auth.APIKeyStore
 	rbac   *auth.RBAC
+	// approvalStore reads the persistent approval service (milestone B).
+	approvalStore ApprovalStore
 	// identity maps credentials to principals and holds grants and
 	// resource ownership (milestone A). Wired via SetIdentity.
 	identity *identity.Store
@@ -446,6 +448,9 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "POST /api/agents/approve", http.HandlerFunc(s.handleAgentApprove))
 	s.route(mux, "GET /api/agents/pending", http.HandlerFunc(s.handleAgentPending))
 	s.route(mux, "GET /api/attention", http.HandlerFunc(s.handleAttention))
+	s.route(mux, "GET /api/approvals", http.HandlerFunc(s.handleApprovalsList))
+	s.route(mux, "GET /api/approvals/{id}", http.HandlerFunc(s.handleApprovalGet))
+	s.route(mux, "POST /api/approvals/{id}/decision", http.HandlerFunc(s.handleApprovalDecision))
 	s.route(mux, "GET /api/agents/history", http.HandlerFunc(s.handleAgentHistory))
 	s.route(mux, "GET /api/agents/history/{id}", http.HandlerFunc(s.handleAgentSessionHistory))
 

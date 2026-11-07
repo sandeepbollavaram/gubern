@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sandeepbollavaram/vortex/internal/agentevents"
+	"github.com/sandeepbollavaram/vortex/internal/approvals"
 )
 
 // ErrTooManyRequests is returned by Submit when the concurrency cap is reached.
@@ -246,6 +247,12 @@ func (r *Runtime) Approve(sessionID string, approved bool) (string, bool) {
 // ApproveAction is Approve bound to one action id (see Coordinator.ApproveActionID).
 func (r *Runtime) ApproveAction(sessionID, actionID string, approved bool) (string, bool, error) {
 	return r.cfg.Coordinator.ApproveActionID(sessionID, actionID, approved)
+}
+
+// DecideApproval applies one decision from any channel through the
+// persistent approval service (see Coordinator.DecideApproval).
+func (r *Runtime) DecideApproval(ctx context.Context, req DecideRequest) (string, approvals.Approval, error) {
+	return r.cfg.Coordinator.DecideApproval(ctx, req)
 }
 
 // PendingApprovals lists actions waiting for a human decision.

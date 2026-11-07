@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sandeepbollavaram/vortex/internal/agentevents"
+	"github.com/sandeepbollavaram/vortex/internal/approvals"
 	"github.com/sandeepbollavaram/vortex/internal/authz"
 	"github.com/sandeepbollavaram/vortex/internal/security"
 )
@@ -334,6 +335,19 @@ func (s *Server) handleAgentApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.requireAccess(w, r, authz.ApprovalsDecide, resSession, req.SessionID) {
+		return
+	}
+	// With the approval service every decision names its decider and goes
+	// through the one decision path (milestone B).
+	if dec, ok := s.agentRuntime.(approvalDecider); ok && s.approvalStore != nil {
+		tr, a, err := dec.DecideApproval(r.Context(), req.SessionID, req.ActionID, req.Approved, "",
+			approvals.Decider{PrincipalID: principalID(r), Channel: "api"})
+		if err != nil {
+			s.writeApprovalError(w, err, a)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"resolved": true, "result": tr, "approval_id": a.ID, "decided_by": a.DecidedBy})
 		return
 	}
 	var transcript string

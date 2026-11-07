@@ -35,8 +35,11 @@ const MaxOutput = 4096
 
 // Pending describes an action waiting for a human decision.
 type Pending struct {
-	SessionID   string    `json:"session_id"`
-	ActionID    string    `json:"action_id"`
+	SessionID string `json:"session_id"`
+	ActionID  string `json:"action_id"`
+	// ActionHash is the full SHA-256 of the canonical action (milestone B).
+	// A decision that names it applies only to exactly this action.
+	ActionHash  string    `json:"action_hash,omitempty"`
 	Tool        string    `json:"tool"`
 	Risk        string    `json:"risk"`
 	Description string    `json:"description"`
@@ -49,7 +52,11 @@ type Pending struct {
 
 // Event is one structured step of an agent run.
 type Event struct {
-	Type      Type   `json:"type"`
+	Type Type `json:"type"`
+	// RunID and Seq identify the event in the persisted log: Seq increases
+	// by one per event within a run and is the SSE event id.
+	RunID     string `json:"run_id,omitempty"`
+	Seq       int64  `json:"seq,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 	// StepID pairs a tool_start with its tool_end.
 	StepID     string   `json:"step_id,omitempty"`
@@ -60,6 +67,7 @@ type Event struct {
 	Output     string   `json:"output,omitempty"`
 	Approval   *Pending `json:"approval,omitempty"`
 	DecidedVia string   `json:"decided_via,omitempty"`
+	DecidedBy  string   `json:"decided_by,omitempty"`
 	Text       string   `json:"text,omitempty"`
 	At         int64    `json:"at"` // unix milliseconds
 }

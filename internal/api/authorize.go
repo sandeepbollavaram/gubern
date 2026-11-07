@@ -78,6 +78,9 @@ var routeScopes = map[string]authz.Scope{
 	"GET /api/agents/team/{id}/messages": authz.SessionsRead,
 	"POST /api/agents/{id}/chat":         authz.AgentsRun,
 
+	"GET /api/approvals":                 authz.ApprovalsRead,
+	"GET /api/approvals/{id}":            authz.ApprovalsRead,
+	"POST /api/approvals/{id}/decision":  authz.ApprovalsDecide,
 	"GET /api/checkpoints":               authz.ApprovalsRead,
 	"POST /api/checkpoints/{id}/approve": authz.ApprovalsDecide,
 	"POST /api/checkpoints/{id}/reject":  authz.ApprovalsDecide,

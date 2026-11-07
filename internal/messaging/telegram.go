@@ -44,15 +44,51 @@ type CallbackResolver interface {
 	Resolve(callbackData string) bool
 }
 
+// ActorCallbackResolver is a CallbackResolver that needs to know who pressed
+// the button (approval decisions carry the sender's identity) and where to
+// reply.
+type ActorCallbackResolver interface {
+	ResolveFrom(ctx context.Context, callbackData string, fromID, chatID int64) bool
+}
+
+type senderKey struct{}
+
+// withSender records the Telegram user who sent the message being handled.
+func withSender(ctx context.Context, fromID int64) context.Context {
+	return context.WithValue(ctx, senderKey{}, fromID)
+}
+
+// senderFrom returns the sender recorded by withSender, or fallback.
+func senderFrom(ctx context.Context, fallback int64) int64 {
+	if v, ok := ctx.Value(senderKey{}).(int64); ok && v != 0 {
+		return v
+	}
+	return fallback
+}
+
+// resolveCallback hands a button press to the resolver, with the sender when
+// the resolver needs it.
+func (t *TelegramBot) resolveCallback(ctx context.Context, cq *telegramCallback, chatID int64) bool {
+	if t.resolver == nil {
+		return false
+	}
+	if ar, ok := t.resolver.(ActorCallbackResolver); ok {
+		return ar.ResolveFrom(ctx, cq.Data, cq.From.ID, chatID)
+	}
+	return t.resolver.Resolve(cq.Data)
+}
+
 // CommandHooks supply data for the bot's built-in slash commands. Each is
 // optional; a nil hook yields a "not available" reply. They keep telegram.go
 // decoupled from the api/agents packages (wired in start.go).
 type CommandHooks struct {
-	Status  func() string                                  // /status reply
-	Routes  func() string                                  // /routes reply
-	Cost    func() string                                  // /cost reply
-	List    func(path string) string                       // /ls reply
-	Approve func(sessionID string, ok bool) (string, bool) // /approve, /reject
+	Status func() string            // /status reply
+	Routes func() string            // /routes reply
+	Cost   func() string            // /cost reply
+	List   func(path string) string // /ls reply
+	// Approve handles /approve and /reject [id] from the Telegram user
+	// fromID; approvalID is "" for the session's current approval.
+	Approve func(ctx context.Context, sessionID, approvalID string, fromID int64, ok bool) (string, bool)
 	// ClarifySubmit submits a combined clarifying answer for a session (used when
 	// all option buttons have been tapped).
 	ClarifySubmit func(sessionID, answer string)
@@ -314,7 +350,8 @@ func (t *TelegramBot) lastUpdateID(upd telegramUpdate) int64 { return upd.Update
 // webhook handler and polling mode.
 func (t *TelegramBot) processUpdate(ctx context.Context, runtime *agents.Runtime, upd telegramUpdate) {
 	if upd.CallbackQuery != nil {
-		if _, ok := t.allowedCallback(upd.CallbackQuery); !ok {
+		chatID, ok := t.allowedCallback(upd.CallbackQuery)
+		if !ok {
 			return
 		}
 		// Clarify option buttons first, then the team (checkpoint) resolver,
@@ -325,9 +362,7 @@ func (t *TelegramBot) processUpdate(ctx context.Context, runtime *agents.Runtime
 		if t.teamCallback != nil && t.teamCallback.Resolve(upd.CallbackQuery.Data) {
 			return
 		}
-		if t.resolver != nil {
-			t.resolver.Resolve(upd.CallbackQuery.Data)
-		}
+		t.resolveCallback(ctx, upd.CallbackQuery, chatID)
 		return
 	}
 	if upd.Message == nil {
@@ -336,7 +371,7 @@ func (t *TelegramBot) processUpdate(ctx context.Context, runtime *agents.Runtime
 	if !t.allowedMessage(upd.Message) {
 		return
 	}
-	t.dispatch(ctx, runtime, upd.Message.Chat.ID, upd.Message.Text)
+	t.dispatch(withSender(ctx, upd.Message.From.ID), runtime, upd.Message.Chat.ID, upd.Message.Text)
 }
 
 // allowedCallback reports whether a button press may act, and the chat to
@@ -440,7 +475,7 @@ func (t *TelegramBot) HandleWebhook(runtime *agents.Runtime) http.Handler {
 				// consumed by the clarification collector
 			case t.teamCallback != nil && t.teamCallback.Resolve(upd.CallbackQuery.Data):
 				// consumed by the team (checkpoint) resolver
-			case t.resolver != nil && t.resolver.Resolve(upd.CallbackQuery.Data):
+			case t.resolveCallback(context.WithoutCancel(r.Context()), upd.CallbackQuery, chatID):
 				// consumed by the approval resolver
 			default:
 				t.dispatchDetached(r.Context(), runtime, chatID, upd.CallbackQuery.Data)
@@ -452,7 +487,7 @@ func (t *TelegramBot) HandleWebhook(runtime *agents.Runtime) http.Handler {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
-			t.dispatchDetached(r.Context(), runtime, chatID, upd.Message.Text)
+			t.dispatchDetached(withSender(r.Context(), upd.Message.From.ID), runtime, chatID, upd.Message.Text)
 			w.WriteHeader(http.StatusOK)
 		default:
 			// Nothing actionable in this update.
@@ -510,7 +545,7 @@ func (t *TelegramBot) dispatch(ctx context.Context, runtime *agents.Runtime, cha
 
 // handleCommand handles the built-in slash commands. It returns (reply, true)
 // when the message was a recognised command, else ("", false).
-func (t *TelegramBot) handleCommand(_ context.Context, chatID int64, text string) (string, bool) {
+func (t *TelegramBot) handleCommand(ctx context.Context, chatID int64, text string) (string, bool) {
 	cmd, arg, _ := strings.Cut(strings.TrimSpace(text), " ")
 	arg = strings.TrimSpace(arg)
 	session := fmt.Sprintf("telegram:%d", chatID)
@@ -530,14 +565,7 @@ func (t *TelegramBot) handleCommand(_ context.Context, chatID int64, text string
 		if t.hooks.Approve == nil {
 			return "approval not available", true
 		}
-		transcript, matched := t.hooks.Approve(session, cmd == "/approve")
-		if !matched {
-			return "No pending action to " + strings.TrimPrefix(cmd, "/") + ".", true
-		}
-		if cmd == "/approve" {
-			return "✅ Approved\n" + transcript, true
-		}
-		return "❌ Rejected", true
+		return t.hooks.Approve(ctx, session, arg, senderFrom(ctx, chatID), cmd == "/approve")
 	case "/help":
 		return helpText(), true
 	case "/build":

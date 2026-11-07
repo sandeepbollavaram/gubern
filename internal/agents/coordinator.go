@@ -19,6 +19,7 @@ import (
 	agentskills "github.com/sandeepbollavaram/vortex/internal/skills"
 
 	"github.com/sandeepbollavaram/vortex/internal/agentevents"
+	"github.com/sandeepbollavaram/vortex/internal/approvals"
 )
 
 // AIGateway is the interface the coordinator uses to reach a language model. It
@@ -169,6 +170,11 @@ type CoordinatorConfig struct {
 	// Audit, when set, records every approval-gated local action: the
 	// request, the decision, and the execution result. Optional.
 	Audit AuditLogger
+	// Approvals, when set, is the persistent approval service: every gated
+	// action becomes a stored approval decided through DecideApproval, and
+	// Approval (the in-memory messaging approver) is not used for local and
+	// loop tools. See coordinator_approvals.go.
+	Approvals ApprovalBroker
 }
 
 // pendingApproval holds a tool action awaiting the user's approve/reject via
@@ -186,6 +192,10 @@ type pendingApproval struct {
 	actionID    string              // ActionID of the request; approve calls may be bound to it
 	created     time.Time           // pending approvals expire after approvalTTL
 	info        agentevents.Pending // what clients show for this pending action
+	// With the approval service: the stored approval's action hash (actionID
+	// is then the approval id) and the request it was opened for.
+	actionHash  string
+	approvalReq ApprovalRequest
 }
 
 // approvalTTL bounds how long a pending action stays approvable. Without it a
@@ -752,6 +762,12 @@ func (c *Coordinator) RunTool(ctx context.Context, name string, params map[strin
 	}
 
 	// The action needs human sign-off.
+	if b := c.broker(); b != nil {
+		if !c.runToolBrokered(ctx, b, ae.Request) {
+			return nil, fmt.Errorf("agents: action rejected by user")
+		}
+		return c.cfg.Tools.ExecuteApproved(ctx, name, params)
+	}
 	if c.cfg.Approval == nil || !c.cfg.Approval(ctx, ae.Request) {
 		return nil, fmt.Errorf("agents: action rejected by user")
 	}
@@ -822,6 +838,11 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	// not block, because the TUI can only render the approval box after Submit
 	// returns. ApproveAction then executes the action when the user's
 	// approve/reject POST arrives.
+	// With the approval service the action is stored and decided once, by
+	// whichever channel decides first (milestone B).
+	if b := c.broker(); b != nil {
+		return c.requestApprovalBrokered(ctx, b, session, name, tool, params, ae.Request, emit, stepEnd)
+	}
 	// Encode the risk level + tool so the TUI can render a risk badge and the
 	// matching header severity (brand redesign part 6).
 	actionID := ActionID(ae.Request)
@@ -942,6 +963,9 @@ func pendingInfo(session, actionID string, req ApprovalRequest, workspace string
 // oldest first. Expired entries are skipped (they can no longer be
 // approved).
 func (c *Coordinator) PendingApprovals() []agentevents.Pending {
+	if b := c.broker(); b != nil {
+		return pendingApprovalsBrokered(b)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := make([]agentevents.Pending, 0, len(c.pending))
@@ -1051,6 +1075,19 @@ func (c *Coordinator) ApproveAction(session string, approved bool) (transcript s
 // and ErrActionMismatch is returned (matched is true: something is pending).
 // An empty actionID keeps the unbound behaviour for older clients.
 func (c *Coordinator) ApproveActionID(session, actionID string, approved bool) (transcript string, matched bool, err error) {
+	if c.broker() != nil {
+		// With the approval service every decision names its decider; this
+		// unattributed form is refused by the service's authorizer (callers
+		// use DecideApproval).
+		transcript, _, err = c.DecideApproval(context.Background(), DecideRequest{
+			SessionID: session, ApprovalID: actionID, Approve: approved,
+			Decider: approvals.Decider{Channel: "unattributed"},
+		})
+		if errors.Is(err, ErrNoPendingApproval) {
+			return "", false, nil
+		}
+		return transcript, true, err
+	}
 	c.mu.Lock()
 	p, ok := c.pending[session]
 	if ok && actionID != "" && p.actionID != actionID {
@@ -1116,6 +1153,16 @@ func (c *Coordinator) resolvePending(session string, p *pendingApproval, approve
 
 // HasPendingApproval reports whether a session has an action awaiting approval.
 func (c *Coordinator) HasPendingApproval(session string) bool {
+	if b := c.broker(); b != nil {
+		c.mu.Lock()
+		p := c.pending[session]
+		c.mu.Unlock()
+		if p == nil || p.actionHash == "" {
+			return false
+		}
+		a, err := b.Get(p.actionID)
+		return err == nil && a.Status == approvals.Pending && time.Now().Before(a.ExpiresAt)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	p, ok := c.pending[session]
@@ -2404,6 +2451,9 @@ func errString(err error) string {
 // action resolved by ApproveAction (the TUI/API approve call), waited on
 // until the run's deadline.
 func (c *Coordinator) loopApprover(sessionID string, emit func(string)) ApprovalFunc {
+	if b := c.broker(); b != nil {
+		return c.loopApproverBrokered(b, sessionID, emit)
+	}
 	return func(ctx context.Context, req ApprovalRequest) bool {
 		actionID := ActionID(req)
 		now := time.Now()

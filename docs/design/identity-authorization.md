@@ -237,6 +237,9 @@ service principal.
 | GET | `/api/agents/comms/stream` | `sessions:read` | cross-session feed: needs `*` | any | any key |
 | GET | `/api/agents/team/{id}/messages` | `sessions:read` | cross-session feed: needs `*` | any | any key |
 | POST | `/api/agents/{id}/chat` | `agents:run` | session in body | any | any key |
+| GET | `/api/approvals` | `approvals:read` | filtered by session | any | new in B |
+| GET | `/api/approvals/{id}` | `approvals:read` | the approval's session | any | new in B |
+| POST | `/api/approvals/{id}/decision` | `approvals:decide` | the approval's session | **person** | new in B |
 | GET | `/api/checkpoints` | `approvals:read` | filtered by the checkpoint's session | any | any key |
 | POST | `/api/checkpoints/{id}/approve` | `approvals:decide` | the checkpoint's session | **person** | any key |
 | POST | `/api/checkpoints/{id}/reject` | `approvals:decide` | the checkpoint's session | **person** | any key |

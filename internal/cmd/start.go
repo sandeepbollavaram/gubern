@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -639,6 +640,15 @@ func runStart(ctx context.Context, pidfile string) error {
 	}
 	apiSrv.SetIdentity(idStore)
 	mgr.OnShutdown("identity", func(context.Context) error { return idStore.Close() })
+	// Approvals (milestone B): one persistent service decides every
+	// approval-gated action, whichever channel the decision comes from.
+	approvalSvc, err := openApprovalService(keyStorePath, idStore, auditLog, log)
+	if err != nil {
+		display.StepFail("Approvals", err.Error())
+		return fmt.Errorf("initialising approval service: %w", err)
+	}
+	apiSrv.SetApprovals(approvalSvc)
+	mgr.OnShutdown("approvals", func(context.Context) error { return approvalSvc.Close() })
 	display.Step("Authentication", fmt.Sprintf("enabled, %d key(s)", keyStore.Count()))
 	mgr.OnShutdown("apikeys", func(context.Context) error {
 		if err := keyStore.Save(keyStorePath); err != nil {
@@ -905,6 +915,8 @@ func runStart(ctx context.Context, pidfile string) error {
 
 	// --- messaging (M11): AI gateway + notification router + approval -------
 	msg := buildMessaging(log)
+	// Every human approval, including DevOps, goes through the service.
+	msg.approvalFn = brokerApprovalFunc(approvalSvc, "devops")
 	if msg.gateway != nil {
 		display.Step("AI gateway", "provider="+strings.Join(msg.gateway.ProviderNames(), ","))
 	} else {
@@ -1037,6 +1049,8 @@ func runStart(ctx context.Context, pidfile string) error {
 	bootSteps.step("agent runtime")
 	agentRuntime := buildAgentRuntime(ctx, log, apiSrv.Addr(), auditLog, gateway, msg.approvalFn, forgeBuildApp(forgeJobs), workDir, localFS, clarifying, pending, researchFn, devopsFn, pipelineFn, orchestrateFn)
 	if agentRuntime != nil {
+		agentRuntime.Coordinator().SetApprovals(approvalSvc)
+		wireChannelApprovals(approvalSvc, agentRuntime, &msg, log)
 		adapter := &agentRuntimeAdapter{rt: agentRuntime}
 		apiSrv.SetAgentRuntime(adapter)
 		mgr.OnShutdown("agents", func(c context.Context) error { return agentRuntime.Stop(c) })
@@ -2487,7 +2501,7 @@ type messagingComponents struct {
 	telegram   *messaging.TelegramBot
 	whatsapp   *messaging.WhatsAppBot
 	slack      *messaging.SlackBot
-	approval   *messaging.ApprovalManager
+	approvals  *messaging.ChannelApprovals
 	approvalFn agents.ApprovalFunc
 	tgChat     int64 // resolved Telegram default chat (env or setup config)
 }
@@ -2740,18 +2754,9 @@ func buildMessaging(log *slog.Logger) messagingComponents {
 		log.Info("messaging disabled")
 	}
 
-	// --- human-in-the-loop approval (M10.7) ---------------------------------
-	// Approval routes to Telegram when a default chat is set; the resolver
-	// consumes approve/reject button callbacks before they reach the runtime.
-	if m.telegram != nil {
-		chat := tgChat
-		if chat != 0 {
-			m.approval = messaging.NewApprovalManager(m.telegram, chat, 0)
-			m.telegram.SetCallbackResolver(m.approval)
-			m.approvalFn = m.approval.ApprovalFunc()
-			log.Info("agent approval gate enabled", "channel", "telegram")
-		}
-	}
+	// Human-in-the-loop approval (milestone B) is the persistent approval
+	// service, wired in start once the runtime exists (wireChannelApprovals):
+	// Telegram, WhatsApp and Slack announce and decide through it.
 
 	return m
 }
@@ -2806,7 +2811,7 @@ func registerTelegramDelivery(apiSrv *api.Server, m messagingComponents, rt *age
 	// network calls (setMyCommands, setWebhook) run in the BACKGROUND so a slow
 	// or unreachable Telegram API never delays startup or shutdown.
 	if m.telegram != nil {
-		wireTelegramCommands(m.telegram, apiSrv, rt)
+		wireTelegramCommands(m.telegram, apiSrv, rt, m.approvals)
 		bot := m.telegram
 		go func() {
 			// 5s cap: a revoked/unreachable token must not keep this goroutine
@@ -2823,7 +2828,7 @@ func registerTelegramDelivery(apiSrv *api.Server, m messagingComponents, rt *age
 
 // wireTelegramCommands wires the built-in /status, /routes, /cost, /ls,
 // /approve, /reject command data sources.
-func wireTelegramCommands(bot *messaging.TelegramBot, apiSrv *api.Server, rt *agents.Runtime) {
+func wireTelegramCommands(bot *messaging.TelegramBot, apiSrv *api.Server, rt *agents.Runtime, ca *messaging.ChannelApprovals) {
 	bot.SetCommandHooks(messaging.CommandHooks{
 		Status: func() string {
 			cfg := apiSrv.StatusSnapshot()
@@ -2851,9 +2856,7 @@ func wireTelegramCommands(bot *messaging.TelegramBot, apiSrv *api.Server, rt *ag
 			}
 			return res
 		},
-		Approve: func(sessionID string, ok bool) (string, bool) {
-			return rt.Approve(sessionID, ok)
-		},
+		Approve: telegramApproveHook(ca),
 		ClarifySubmit: func(sessionID, answer string) {
 			// Submit the combined clarifying answer to the runtime (same session
 			// → continues the build). Drain the response channel in the background.
@@ -2884,7 +2887,33 @@ func newTelegramBot(token string, allowed []int64, log *slog.Logger) (*messaging
 				"set GUBERN_TELEGRAM_SECRET to its secret_token, or use GUBERN_PUBLIC_URL / GUBERN_TELEGRAM_POLLING=true")
 		}
 	}
-	return messaging.NewTelegramBot(messaging.TelegramConfig{Token: token, AllowedIDs: allowed, SecretToken: secret})
+	base, err := telegramAPIBase(token)
+	if err != nil {
+		return nil, err
+	}
+	return messaging.NewTelegramBot(messaging.TelegramConfig{Token: token, AllowedIDs: allowed, SecretToken: secret, BaseURL: base})
+}
+
+// telegramAPIBase returns the Bot API base for token: GUBERN_TELEGRAM_API_URL
+// (a self-hosted Bot API server, or a test double) or "" for
+// api.telegram.org. The token travels to that server, so it must be https
+// unless it is on this machine.
+func telegramAPIBase(token string) (string, error) {
+	raw := strings.TrimRight(strings.TrimSpace(os.Getenv("GUBERN_TELEGRAM_API_URL")), "/")
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", fmt.Errorf("GUBERN_TELEGRAM_API_URL %q is not a URL", raw)
+	}
+	switch {
+	case u.Scheme == "https":
+	case u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1"):
+	default:
+		return "", fmt.Errorf("GUBERN_TELEGRAM_API_URL must be https (or http on this machine)")
+	}
+	return raw + "/bot" + token, nil
 }
 
 // startTelegramDelivery starts polling mode (GUBERN_TELEGRAM_POLLING=true) or

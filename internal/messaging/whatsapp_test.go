@@ -276,10 +276,15 @@ func TestNormalizeWhatsAppNumber(t *testing.T) {
 func TestWhatsApp_SendApprovalRequest(t *testing.T) {
 	f := newFakeWhatsApp(t)
 	bot := newTestWA(t, f, WhatsAppConfig{})
-	if err := bot.SendApprovalRequest(context.Background(), "15551234567", "run build?"); err != nil {
+	if err := bot.SendApprovalRequest(context.Background(), "15551234567", "run build?", "0123456789abcdef"); err != nil {
 		t.Fatalf("SendApprovalRequest: %v", err)
 	}
 	if f.lastJSON["type"] != "interactive" {
 		t.Errorf("type = %v, want interactive", f.lastJSON["type"])
+	}
+	// The buttons name the approval, so a press decides exactly that one.
+	raw, _ := json.Marshal(f.lastJSON)
+	if !strings.Contains(string(raw), "approve:0123456789abcdef") || !strings.Contains(string(raw), "reject:0123456789abcdef") {
+		t.Errorf("buttons don't carry the approval id: %s", raw)
 	}
 }

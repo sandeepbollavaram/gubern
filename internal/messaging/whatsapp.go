@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sandeepbollavaram/vortex/internal/agents"
 )
@@ -59,6 +60,8 @@ type WhatsAppBot struct {
 	cfg      WhatsAppConfig
 	baseURL  string
 	client   *http.Client
+	// approvals, when set, decides approval buttons and /approve commands.
+	approvals *ChannelApprovals
 }
 
 // NewWhatsAppBot constructs the bot. It requires PhoneNumberID and AccessToken.
@@ -186,6 +189,12 @@ type whatsappInbound struct {
 					Text struct {
 						Body string `json:"body"`
 					} `json:"text"`
+					// Interactive carries a button press (approval buttons).
+					Interactive struct {
+						ButtonReply struct {
+							ID string `json:"id"`
+						} `json:"button_reply"`
+					} `json:"interactive"`
 				} `json:"messages"`
 			} `json:"value"`
 		} `json:"changes"`
@@ -222,7 +231,7 @@ func (wb *WhatsAppBot) HandleWebhook(runtime *agents.Runtime) http.Handler {
 		for _, e := range in.Entry {
 			for _, c := range e.Changes {
 				for _, m := range c.Value.Messages {
-					msgs = append(msgs, whatsappMessageRef{from: m.From, text: m.Text.Body})
+					msgs = append(msgs, whatsappMessageRef{from: m.From, text: m.Text.Body, button: m.Interactive.ButtonReply.ID})
 				}
 			}
 		}
@@ -232,6 +241,10 @@ func (wb *WhatsAppBot) HandleWebhook(runtime *agents.Runtime) http.Handler {
 			go func() {
 				defer wb.inflight.Done()
 				for _, m := range msgs {
+					if m.button != "" {
+						wb.handleButton(ctx, m.from, m.button)
+						continue
+					}
 					wb.dispatch(ctx, runtime, m.from, m.text)
 				}
 			}()
@@ -276,13 +289,53 @@ func (wb *WhatsAppBot) senderAllowed(from string) bool {
 // on the allow-list are dropped without a reply, so the bot doesn't confirm it
 // exists to strangers.
 // whatsappMessageRef is one inbound message to dispatch.
-type whatsappMessageRef struct{ from, text string }
+type whatsappMessageRef struct{ from, text, button string }
+
+// SetApprovals lets the bot decide approvals: button presses and
+// "/approve <id>" / "/reject <id>" from an allowed sender become decisions by
+// whatsapp:<number> through the shared approval service.
+func (wb *WhatsAppBot) SetApprovals(c *ChannelApprovals) { wb.approvals = c }
+
+// handleButton applies an approval button press from an allowed sender.
+func (wb *WhatsAppBot) handleButton(ctx context.Context, from, id string) {
+	if wb.approvals == nil || !wb.senderAllowed(from) {
+		return
+	}
+	approvalID, approve, ok := parseDecision(id)
+	if !ok {
+		return
+	}
+	reply := wb.approvals.Decide(ctx, "whatsapp", NormalizeWhatsAppNumber(from), "", approvalID, approve)
+	_ = wb.SendText(ctx, from, reply)
+}
+
+// approvalCommand handles "/approve [id]" and "/reject [id]"; ok is false for
+// any other text.
+func (wb *WhatsAppBot) approvalCommand(ctx context.Context, from, text string) (string, bool) {
+	cmd, arg, _ := strings.Cut(strings.TrimSpace(text), " ")
+	cmd = strings.ToLower(cmd)
+	if cmd != "/approve" && cmd != "/reject" {
+		return "", false
+	}
+	if wb.approvals == nil {
+		return "Approvals are not available.", true
+	}
+	arg = strings.TrimSpace(arg)
+	if arg != "" && !validApprovalID(arg) {
+		return "Usage: " + cmd + " [approval id]", true
+	}
+	return wb.approvals.Decide(ctx, "whatsapp", NormalizeWhatsAppNumber(from), "whatsapp:"+from, arg, cmd == "/approve"), true
+}
 
 func (wb *WhatsAppBot) dispatch(ctx context.Context, runtime *agents.Runtime, from, text string) {
 	if runtime == nil || text == "" || from == "" {
 		return
 	}
 	if !wb.senderAllowed(from) {
+		return
+	}
+	if reply, ok := wb.approvalCommand(ctx, from, text); ok {
+		_ = wb.SendText(ctx, from, reply)
 		return
 	}
 	ch, err := runtime.Submit(ctx, text, "whatsapp:"+from)
@@ -300,8 +353,16 @@ func (wb *WhatsAppBot) dispatch(ctx context.Context, runtime *agents.Runtime, fr
 }
 
 // SendApprovalRequest sends an interactive button message (Approve / Reject)
-// used by the human-in-the-loop flow.
-func (wb *WhatsAppBot) SendApprovalRequest(ctx context.Context, to, description string) error {
+// for approval id; the buttons come back as "approve:<id>" / "reject:<id>".
+func (wb *WhatsAppBot) SendApprovalRequest(ctx context.Context, to, description, id string) error {
+	// WhatsApp caps an interactive body at 1024 characters.
+	if len(description) > 1000 {
+		cut := 1000
+		for cut > 0 && !utf8.RuneStart(description[cut]) {
+			cut--
+		}
+		description = description[:cut] + "…"
+	}
 	_, err := wb.post(ctx, "/messages", map[string]any{
 		"messaging_product": "whatsapp",
 		"to":                to,
@@ -311,8 +372,8 @@ func (wb *WhatsAppBot) SendApprovalRequest(ctx context.Context, to, description 
 			"body": map[string]any{"text": description},
 			"action": map[string]any{
 				"buttons": []map[string]any{
-					{"type": "reply", "reply": map[string]any{"id": "approve", "title": "Approve"}},
-					{"type": "reply", "reply": map[string]any{"id": "reject", "title": "Reject"}},
+					{"type": "reply", "reply": map[string]any{"id": "approve:" + id, "title": "Approve"}},
+					{"type": "reply", "reply": map[string]any{"id": "reject:" + id, "title": "Reject"}},
 				},
 			},
 		},

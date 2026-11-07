@@ -53,7 +53,13 @@ type SlackBot struct {
 	client *http.Client
 	now    func() time.Time
 	allow  slackAllowList
+	// approvals, when set, decides "/vortex approve|reject <id>".
+	approvals *ChannelApprovals
 }
+
+// SetApprovals lets operator-level Slack users decide approvals as
+// slack:<team>-<user> through the shared approval service.
+func (s *SlackBot) SetApprovals(c *ChannelApprovals) { s.approvals = c }
 
 // NewSlackBot constructs the bot.
 func NewSlackBot(cfg SlackConfig) (*SlackBot, error) {
@@ -267,8 +273,17 @@ func (s *SlackBot) handleSub(ctx context.Context, runtime *agents.Runtime, sessi
 		return "deploy requested: " + args
 	case "logs":
 		return "recent logs for: " + args
+	case "approve", "reject":
+		if s.approvals == nil {
+			return "approvals are not available"
+		}
+		id := strings.TrimSpace(args)
+		if id != "" && !validApprovalID(id) {
+			return "usage: /vortex " + sub + " [approval id]"
+		}
+		return s.approvals.Decide(ctx, "slack", strings.TrimPrefix(session, "slack-"), session, id, sub == "approve")
 	case "", "help":
-		return "usage: /vortex <status|logs|deploy|reload|whoami> or /vortex <request for the agent>"
+		return "usage: /vortex <status|logs|deploy|reload|whoami|approve <id>|reject <id>> or /vortex <request for the agent>"
 	default:
 		// Anything else is treated as a free-form request to the coordinator.
 		if runtime == nil {
