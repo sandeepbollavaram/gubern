@@ -928,7 +928,10 @@ func runStart(ctx context.Context, pidfile string) error {
 	msg.approvalFn = brokerApprovalFunc(approvalSvc, "devops")
 	// Paired channel accounts (milestone F): linked ones are let in, revoked
 	// ones refused, and /pair links an account to a person.
-	if ci := channelIdentity(idStore); msg.telegram != nil || msg.whatsapp != nil {
+	if ci := channelIdentity(idStore); msg.telegram != nil || msg.whatsapp != nil || msg.discord != nil {
+		if msg.discord != nil {
+			msg.discord.SetIdentity(ci)
+		}
 		if msg.telegram != nil {
 			msg.telegram.SetIdentity(ci)
 		}
@@ -2520,6 +2523,7 @@ type messagingComponents struct {
 	telegram   *messaging.TelegramBot
 	whatsapp   *messaging.WhatsAppBot
 	slack      *messaging.SlackBot
+	discord    *messaging.DiscordBot
 	approvals  *messaging.ChannelApprovals
 	approvalFn agents.ApprovalFunc
 	tgChat     int64 // resolved Telegram default chat (env or setup config)
@@ -2773,6 +2777,30 @@ func buildMessaging(log *slog.Logger) messagingComponents {
 		log.Info("messaging disabled")
 	}
 
+	// --- Discord (milestone I): HTTP interactions, verified with the
+	// application's Ed25519 public key.
+	if pk := strings.TrimSpace(os.Getenv("GUBERN_DISCORD_PUBLIC_KEY")); pk != "" {
+		base, berr := discordAPIBase()
+		var bot *messaging.DiscordBot
+		var err error
+		if berr != nil {
+			err = berr
+		} else {
+			bot, err = messaging.NewDiscordBot(messaging.DiscordConfig{
+				PublicKey:       pk,
+				BotToken:        os.Getenv("GUBERN_DISCORD_BOT_TOKEN"),
+				ApprovalChannel: os.Getenv("GUBERN_DISCORD_APPROVAL_CHANNEL"),
+				AllowedUsers:    splitCSV(os.Getenv("GUBERN_DISCORD_ALLOWED_USERS")),
+				BaseURL:         base,
+			})
+		}
+		if err != nil {
+			log.Warn("discord disabled", "err", err)
+		} else {
+			m.discord = bot
+		}
+	}
+
 	// Human-in-the-loop approval (milestone B) is the persistent approval
 	// service, wired in start once the runtime exists (wireChannelApprovals):
 	// Telegram, WhatsApp and Slack announce and decide through it.
@@ -2810,6 +2838,11 @@ func messagingWebhookSpecs(m messagingComponents, rt *agents.Runtime, log *slog.
 		} else {
 			log.Warn("whatsapp inbound webhook not mounted: set GUBERN_WA_APP_SECRET to accept messages (outbound still works)")
 		}
+	}
+	if m.discord != nil {
+		specs = append(specs, api.WebhookSpec{
+			Path: "/webhook/discord", Handler: m.discord.HandleInteractions(rt), RPM: 60,
+		})
 	}
 	if m.slack != nil {
 		if m.slack.InboundEnabled() {
@@ -2911,6 +2944,23 @@ func newTelegramBot(token string, allowed []int64, log *slog.Logger) (*messaging
 		return nil, err
 	}
 	return messaging.NewTelegramBot(messaging.TelegramConfig{Token: token, AllowedIDs: allowed, SecretToken: secret, BaseURL: base})
+}
+
+// discordAPIBase returns GUBERN_DISCORD_API_URL (a proxy or test double)
+// or "" for discord.com. It must be https unless it is on this machine.
+func discordAPIBase() (string, error) {
+	raw := strings.TrimRight(strings.TrimSpace(os.Getenv("GUBERN_DISCORD_API_URL")), "/")
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", fmt.Errorf("GUBERN_DISCORD_API_URL %q is not a URL", raw)
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1")) {
+		return "", fmt.Errorf("GUBERN_DISCORD_API_URL must be https (or http on this machine)")
+	}
+	return raw, nil
 }
 
 // telegramAPIBase returns the Bot API base for token: GUBERN_TELEGRAM_API_URL

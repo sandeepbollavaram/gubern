@@ -239,6 +239,7 @@ service principal.
 | POST | `/api/agents/{id}/chat` | `agents:run` | session in body | any | any key |
 | POST | `/api/pairing` | `devices:manage` | the target person (own, or another with `identity:manage`) | person | new in F |
 | POST | `/api/pairing/redeem` | none: the code is the credential (rate limited) | — | — | new in F |
+| POST | `/api/stepup/challenge` | `approvals:decide` | the approval's session; device credentials only | person (device) | new in H |
 | GET | `/api/devices` | `devices:read` | filtered by owner | any | new in F |
 | DELETE | `/api/devices/{id}` | `devices:manage` | the device's person | any | new in F |
 | POST | `/api/devices/{id}/rotate` | `devices:manage` | the device's person | any | new in F |

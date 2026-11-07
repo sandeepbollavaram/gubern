@@ -29,6 +29,7 @@ type ChannelApprovals struct {
 	tgChat   int64
 	whatsapp *WhatsAppBot
 	waTo     string
+	discord  *DiscordBot
 }
 
 // NewChannelApprovals builds the bridge around decide.
@@ -48,6 +49,16 @@ func (c *ChannelApprovals) WithTelegram(bot *TelegramBot, chat int64) *ChannelAp
 // WithWhatsApp announces approvals to the number to.
 func (c *ChannelApprovals) WithWhatsApp(bot *WhatsAppBot, to string) *ChannelApprovals {
 	c.whatsapp, c.waTo = bot, to
+	if bot != nil {
+		bot.SetApprovals(c)
+	}
+	return c
+}
+
+// WithDiscord announces approvals in the bot's approval channel and accepts
+// its buttons and commands.
+func (c *ChannelApprovals) WithDiscord(bot *DiscordBot) *ChannelApprovals {
+	c.discord = bot
 	if bot != nil {
 		bot.SetApprovals(c)
 	}
@@ -77,6 +88,17 @@ func (c *ChannelApprovals) Notify(a approvals.Approval) {
 			}
 			if err != nil {
 				slog.Default().Warn("telegram approval notice failed", "approval", a.ID, "err", err)
+			}
+		}
+		if c.discord != nil && (a.Status == approvals.Pending || a.DecidedVia != "discord") {
+			var err error
+			if a.Status == approvals.Pending {
+				err = c.discord.SendApprovalRequest(ctx, text, a.ID)
+			} else {
+				err = c.discord.SendText(ctx, text)
+			}
+			if err != nil {
+				slog.Default().Warn("discord approval notice failed", "approval", a.ID, "err", err)
 			}
 		}
 		if c.whatsapp != nil && c.waTo != "" && (a.Status == approvals.Pending || a.DecidedVia != "whatsapp") {

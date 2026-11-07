@@ -165,10 +165,13 @@ func wireChannelApprovals(svc *approvals.Service, rt *agents.Runtime, m *messagi
 	if m.slack != nil {
 		m.slack.SetApprovals(ca)
 	}
+	if m.discord != nil {
+		ca.WithDiscord(m.discord)
+	}
 	svc.OnChange(ca.Notify)
 	m.approvals = ca
-	if m.telegram != nil || m.whatsapp != nil || m.slack != nil {
-		log.Info("approvals can be decided from messaging channels", "telegram", m.telegram != nil, "whatsapp", m.whatsapp != nil, "slack", m.slack != nil)
+	if m.telegram != nil || m.whatsapp != nil || m.slack != nil || m.discord != nil {
+		log.Info("approvals can be decided from messaging channels", "telegram", m.telegram != nil, "whatsapp", m.whatsapp != nil, "slack", m.slack != nil, "discord", m.discord != nil)
 	}
 	return ca
 }
