@@ -370,4 +370,22 @@ Updated 2026-11-08 04:35 IST. Local commits only.
   - the git install path and live Claude caching are not verified against the network;
   - Bedrock Converse has no cache points yet.
 
-**Next: L.** In order: the run state machine, resume after restart, completion checks, team roles as profiles, and the kill-9 harness.
+**L: durable runs. Started.**
+
+**L.1: run state machine. Done.**
+- **Commits:** `2e01426` (server), `a1ea555` (dashboard and app), `9676a0f` (`dist`).
+- **States:**
+  - live: running, waiting_approval, verifying;
+  - final: completed, partial, done, failed, cancelled, interrupted.
+- **Events:** each check attempt is a `check_result` event, and the run reports a `run_outcome`.
+- **Live check:** a passing check ended `completed`; a failing one ended `partial` after three attempts.
+
+**Next: L.2, checkpoint and resume after restart.**
+- The loop saves its transcript, step and budget after each step.
+- `POST /api/runs/{id}/resume` continues an `interrupted` run under its effect scope, so side effects are not repeated.
+- Resume buttons in the dashboard and app.
+
+**After that:**
+- **L.3** checks declared in the submit API;
+- **L.4** team roles as loop profiles;
+- **L.5** the kill-9 harness.
