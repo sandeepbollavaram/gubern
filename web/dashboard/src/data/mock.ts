@@ -534,6 +534,18 @@ ${s.description}
 1. Read the change.
 2. Run the checks.` }) : Promise.reject(new Error("skill not found"));
   },
+  installSkill: (source) =>
+    delay({
+      approvalId: "ap-skill",
+      sessionId: "skill-install-demo",
+      source,
+      treeHash: "f940100bab2873950a3e146ffb8109aa72d1f626400fd5103283aa77cdf2b434",
+      skill: { name: "changelog-writer", description: "Draft a CHANGELOG entry from the commits since the last tag.", scope: "project", path: ".agents/skills/changelog-writer/SKILL.md", hash: "469e4962afd228f5", allowedTools: ["run_terminal"], enabled: true },
+      files: [
+        { path: "SKILL.md", size: 295, sha256: "469e4962afd228f5aa" },
+        { path: "scripts/log.sh", size: 29, sha256: "e7ffea1c3ddc7911bb" },
+      ],
+    }),
   setSkillEnabled: (name, enabled) => {
     const i = mockSkills.findIndex((x) => x.name === name);
     if (i < 0) return Promise.reject(new Error("skill not found"));

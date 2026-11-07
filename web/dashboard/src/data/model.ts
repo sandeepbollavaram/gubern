@@ -87,6 +87,22 @@ export interface Skill {
   /** Tools the skill asks for; policy may narrow them, never widen. */
   allowedTools: string[];
   enabled: boolean;
+  /** Installed through an approved install and recorded in skills.lock. */
+  pinned?: boolean;
+  /** Pinned, but its files changed since approval: not offered to agents. */
+  tampered?: boolean;
+  source?: string;
+}
+
+/** A fetched skill waiting for someone to approve installing it. */
+export interface SkillInstall {
+  approvalId: string;
+  /** The install's own session; its approval shows there. */
+  sessionId: string;
+  source: string;
+  treeHash: string;
+  skill: Skill;
+  files: { path: string; size: number; sha256: string }[];
 }
 
 export interface SkillList {
@@ -185,6 +201,7 @@ export interface GubernClient {
   skills(): Promise<SkillList>;
   skill(name: string): Promise<{ skill: Skill; body: string }>;
   setSkillEnabled(name: string, enabled: boolean): Promise<Skill>;
+  installSkill(source: string): Promise<SkillInstall>;
 
   /** Live views: synchronous snapshot plus change subscription. */
   transcript(sessionId: string): TranscriptItem[];

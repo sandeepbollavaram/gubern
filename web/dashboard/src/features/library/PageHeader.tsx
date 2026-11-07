@@ -7,7 +7,7 @@ export function PageHeader({ title, body, action }: { title: string; body: strin
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="mt-1 text-sm text-muted">{body}</p>
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </header>
   );
 }

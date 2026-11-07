@@ -12,6 +12,7 @@ import type {
   ModelInfo,
   Output,
   Skill,
+  SkillInstall,
   SkillList,
   Risk,
   SendOptions,
@@ -83,6 +84,9 @@ interface WireSkill {
   compatibility?: string;
   allowed_tools?: string[];
   enabled: boolean;
+  pinned?: boolean;
+  tampered?: boolean;
+  source?: string;
 }
 
 const skillFromWire = (s: WireSkill): Skill => ({
@@ -95,6 +99,9 @@ const skillFromWire = (s: WireSkill): Skill => ({
   compatibility: s.compatibility,
   allowedTools: s.allowed_tools ?? [],
   enabled: s.enabled,
+  pinned: s.pinned,
+  tampered: s.tampered,
+  source: s.source,
 });
 
 interface WireRun {
@@ -363,6 +370,15 @@ class HttpClient implements GubernClient {
     const b = await apiJSON<{ skill: WireSkill }>(`/api/skills/${encodeURIComponent(name)}/${enabled ? "enable" : "disable"}`, { method: "POST" });
     this.changed();
     return skillFromWire(b.skill);
+  };
+
+  installSkill = async (source: string): Promise<SkillInstall> => {
+    const b = await apiJSON<{ approval_id: string; session_id: string; source: string; tree_hash: string; skill: WireSkill; files: { path: string; size: number; sha256: string }[] }>(
+      "/api/skills/install",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source }) },
+    );
+    this.changed();
+    return { approvalId: b.approval_id, sessionId: b.session_id, source: b.source, treeHash: b.tree_hash, skill: skillFromWire(b.skill), files: b.files };
   };
 
   // ---- live views ----
