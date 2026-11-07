@@ -106,6 +106,33 @@ of the catalog the model sees. The switches are kept in
 `skill.enabled` or `skill.disabled`. A file that changed after it was listed
 is refused on read (`500`) until it is listed again.
 
+### Installing a skill
+
+```
+POST /api/skills/install  (system:manage)  {"source": "<folder> | https://host/repo.git@<40-hex commit>"}
+  → 202 {approval_id, session_id, source, tree_hash, skill, files:[{path,size,sha256}]}
+```
+
+The skill is copied into quarantine (`<user config>/gubern/skills-quarantine`),
+checked against the spec and hashed, file by file. Git sources must name a
+full commit, so the content can't move after review; only https is fetched,
+with no hooks or submodules. Symlinks, special files and anything over 200
+files or 4 MB are refused.
+
+Nothing is installed yet: the call opens a **HIGH RISK approval** whose
+preview lists every file, its SHA-256 and the tree hash. The requester owns
+the approval's session, so they or their paired phone (with step-up) can
+decide it. Only on approve is the skill moved to
+`<workspace>/.agents/skills/<name>` and recorded in
+`<user config>/gubern/skills.lock` with the source, tree hash, approver and
+approval id. Rejected or expired installs are deleted from quarantine. Audit
+actions: `skill.install_requested`, `skill.installed`,
+`skill.install_declined`, `skill.install_failed`.
+
+A skill in the lock whose files no longer match its tree hash is reported
+with `"tampered": true`. It is not offered to the model until it is
+reinstalled. Pinned skills carry `"pinned": true` and their `source`.
+
 ## OpenAI-compatible API
 
 Any OpenAI-speaking tool (Claude Code, Aider, Cline, Cursor, …) can use

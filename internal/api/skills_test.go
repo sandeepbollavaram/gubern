@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -97,5 +99,45 @@ func TestSkills_NoBackend(t *testing.T) {
 	}
 	if rec := f.do(http.MethodPost, "/api/skills/x/disable", admin, ""); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("switch without backend = %d, want 503", rec.Code)
+	}
+}
+
+type fakeInstaller struct {
+	fakeSkills
+	gotSession string
+}
+
+func (f *fakeInstaller) PrepareInstall(_ context.Context, source, sessionID, _ string) (SkillInstall, error) {
+	if source == "bad" {
+		return SkillInstall{}, fmt.Errorf("%w: no SKILL.md", ErrInstallInput)
+	}
+	f.gotSession = sessionID
+	return SkillInstall{ApprovalID: "ap-1", SessionID: sessionID, Source: source, TreeHash: "ff", Skill: SkillInfo{Name: "lint-fix"}}, nil
+}
+
+func TestSkills_InstallOpensAnApproval(t *testing.T) {
+	f := newAuthzFixture(t)
+	fi := &fakeInstaller{fakeSkills: fakeSkills{disabled: map[string]bool{}}}
+	f.s.SetSkills(fi)
+	_, operator := f.principal(t, authz.Person, "operator")
+	adminID, admin := f.principal(t, authz.Person, "admin")
+
+	if rec := f.do(http.MethodPost, "/api/skills/install", operator, `{"source":"/tmp/x"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("operator install = %d, want 403", rec.Code)
+	}
+	if rec := f.do(http.MethodPost, "/api/skills/install", admin, `{}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("empty source = %d, want 400", rec.Code)
+	}
+	if rec := f.do(http.MethodPost, "/api/skills/install", admin, `{"source":"bad"}`); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "no SKILL.md") {
+		t.Errorf("bad source = %d %s", rec.Code, rec.Body)
+	}
+	rec := f.do(http.MethodPost, "/api/skills/install", admin, `{"source":"/tmp/lint-fix"}`)
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"approval_id":"ap-1"`) {
+		t.Fatalf("install = %d %s", rec.Code, rec.Body)
+	}
+	// The requester owns the install's session, so their devices can decide it.
+	owner, err := f.st.Owner(resSession, fi.gotSession)
+	if err != nil || owner != adminID || !strings.HasPrefix(fi.gotSession, "skill-install-") {
+		t.Errorf("session %q owner = %q, %v; want %q", fi.gotSession, owner, err, adminID)
 	}
 }

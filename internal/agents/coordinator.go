@@ -2343,12 +2343,15 @@ func (c *Coordinator) skillCatalog() (string, map[string]SkillRef) {
 	for _, p := range problems {
 		slog.Warn("skipping invalid skill", "path", p.Path, "error", p.Err)
 	}
-	// Skills the operator turned off are not offered.
-	if disabled, err := agentskills.Disabled(agentskills.StatePath(userdir.Config())); err != nil {
-		slog.Warn("reading skill switches failed; offering all skills", "error", err)
-	} else {
-		found = agentskills.Enabled(found, disabled)
+	// Skills the operator turned off, and installed skills whose files no
+	// longer match what was approved, are not offered.
+	cfgDir := userdir.Config()
+	offered, err := agentskills.Offered(found, agentskills.StatePath(cfgDir), agentskills.LockPath(cfgDir))
+	if err != nil {
+		slog.Warn("reading skill switches or lock failed; offering no skills", "error", err)
+		return "", nil
 	}
+	found = offered
 	cat := agentskills.Catalog(found, wd)
 	if cat == "" {
 		return "", nil

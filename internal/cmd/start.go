@@ -654,6 +654,8 @@ func runStart(ctx context.Context, pidfile string) error {
 		return fmt.Errorf("initialising approval service: %w", err)
 	}
 	apiSrv.SetApprovals(approvalSvc)
+	// Skills (Phase 2): list, switch, and install only through an approval.
+	apiSrv.SetSkills(newSkillsBackend(resolveWorkingDir(), userdir.Config(), approvalSvc, auditLog, log))
 	mgr.OnShutdown("approvals", func(context.Context) error { return approvalSvc.Close() })
 	// Run event log (milestone D): structured streams are recorded, redacted,
 	// and resumable.
@@ -1628,7 +1630,6 @@ func wireDashboardProviders(
 	pluginRegistry *plugins.Registry,
 	policyEngine *policy.Engine,
 ) {
-	apiSrv.SetSkills(newSkillsBackend(resolveWorkingDir(), userdir.Config()))
 	apiSrv.SetStatusProvider(func() api.StatusInfo {
 		cfg := cfgMgr.Current()
 		info := api.StatusInfo{

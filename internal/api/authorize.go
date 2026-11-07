@@ -86,6 +86,7 @@ var routeScopes = map[string]authz.Scope{
 	"GET /api/devices":                       authz.DevicesRead,
 	"GET /api/skills":                        authz.AgentsRead,
 	"GET /api/skills/{name}":                 authz.AgentsRead,
+	"POST /api/skills/install":               authz.SystemManage,
 	"POST /api/skills/{name}/enable":         authz.SystemManage,
 	"POST /api/skills/{name}/disable":        authz.SystemManage,
 	"DELETE /api/devices/{id}":               authz.DevicesManage,

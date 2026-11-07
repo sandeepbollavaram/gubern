@@ -469,6 +469,7 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "GET /api/devices", http.HandlerFunc(s.handleDevicesList))
 	s.route(mux, "GET /api/skills", http.HandlerFunc(s.handleSkillsList))
 	s.route(mux, "GET /api/skills/{name}", http.HandlerFunc(s.handleSkillGet))
+	s.route(mux, "POST /api/skills/install", http.HandlerFunc(s.handleSkillInstall))
 	s.route(mux, "POST /api/skills/{name}/enable", http.HandlerFunc(s.handleSkillEnable))
 	s.route(mux, "POST /api/skills/{name}/disable", http.HandlerFunc(s.handleSkillDisable))
 	s.route(mux, "DELETE /api/devices/{id}", http.HandlerFunc(s.handleDeviceRevoke))

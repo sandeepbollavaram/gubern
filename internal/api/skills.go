@@ -1,8 +1,15 @@
 package api
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+
+	"github.com/sandeepbollavaram/vortex/internal/authz"
 )
 
 // Skills API (agent-platform Phase 2, docs/design/agent-platform-phases-2-5.md
@@ -22,7 +29,41 @@ type SkillInfo struct {
 	Compatibility string   `json:"compatibility,omitempty"`
 	AllowedTools  []string `json:"allowed_tools,omitempty"` // requested, never granted
 	Enabled       bool     `json:"enabled"`
+	// Pinned: installed through an approved install and recorded in
+	// skills.lock. Tampered: pinned, but its files no longer match the
+	// recorded hash; such a skill is not offered to the model.
+	Pinned   bool   `json:"pinned,omitempty"`
+	Tampered bool   `json:"tampered,omitempty"`
+	Source   string `json:"source,omitempty"`
 }
+
+// SkillFile is one file of a skill being installed.
+type SkillFile struct {
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
+}
+
+// SkillInstall is a fetched skill waiting for a person to approve it.
+type SkillInstall struct {
+	ApprovalID string      `json:"approval_id"`
+	SessionID  string      `json:"session_id"`
+	Source     string      `json:"source"`
+	TreeHash   string      `json:"tree_hash"`
+	Skill      SkillInfo   `json:"skill"`
+	Files      []SkillFile `json:"files"`
+}
+
+// SkillInstaller is implemented by backends that can install skills: fetch
+// into quarantine and open an approval; the install happens only if it is
+// approved.
+type SkillInstaller interface {
+	PrepareInstall(ctx context.Context, source, sessionID, requestedBy string) (SkillInstall, error)
+}
+
+// ErrInstallInput marks an install request the caller can fix (bad source,
+// invalid skill); its message is safe to show.
+var ErrInstallInput = errors.New("skill install")
 
 // SkillProblem is a skill that failed to load.
 type SkillProblem struct {
@@ -116,4 +157,41 @@ func (s *Server) setSkillEnabled(w http.ResponseWriter, r *http.Request, enabled
 	s.audit(principalID(r), action, name, map[string]any{"hash": info.Hash, "scope": info.Scope})
 	info.Enabled = enabled
 	s.writeJSON(w, http.StatusOK, map[string]any{"skill": info})
+}
+
+// handleSkillInstall serves POST /api/skills/install {"source": "..."}. The
+// skill is fetched and hashed now; installing it needs an approval, which any
+// approver (including a paired phone with step-up) can decide.
+func (s *Server) handleSkillInstall(w http.ResponseWriter, r *http.Request) {
+	inst, ok := s.skills.(SkillInstaller)
+	if s.skills == nil || !ok {
+		http.Error(w, "skill install not available", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Source string `json:"source"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil || strings.TrimSpace(req.Source) == "" {
+		http.Error(w, `body must be {"source": "<folder or https git URL @ commit>"}`, http.StatusBadRequest)
+		return
+	}
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	sessionID := "skill-install-" + hex.EncodeToString(b)
+	// The requester owns the install's session, so they (and their paired
+	// devices) can decide its approval.
+	if !s.claim(w, r, authz.ApprovalsRead, resSession, sessionID) {
+		return
+	}
+	res, err := inst.PrepareInstall(r.Context(), strings.TrimSpace(req.Source), sessionID, principalID(r))
+	if errors.Is(err, ErrInstallInput) {
+		s.writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		http.Error(w, "preparing the install failed", http.StatusInternalServerError)
+		return
+	}
+	s.audit(principalID(r), "skill.install_requested", res.Skill.Name, map[string]any{"source": res.Source, "tree_hash": res.TreeHash, "approval": res.ApprovalID})
+	s.writeJSON(w, http.StatusAccepted, res)
 }

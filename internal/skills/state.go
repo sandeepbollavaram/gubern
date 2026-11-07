@@ -100,3 +100,20 @@ func Enabled(all []Skill, disabled map[string]bool) []Skill {
 	}
 	return out
 }
+
+// Offered returns the skills the model may be shown: not switched off, and
+// not a locked install whose files changed since it was approved.
+func Offered(found []Skill, statePath, lockPath string) ([]Skill, error) {
+	disabled, err := Disabled(statePath)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := ReadLock(lockPath)
+	if err != nil {
+		return nil, err
+	}
+	for name := range Tampered(found, lock) {
+		disabled[name] = true
+	}
+	return Enabled(found, disabled), nil
+}
