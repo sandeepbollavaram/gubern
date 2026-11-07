@@ -88,6 +88,12 @@ func approvalAction(tool string, params map[string]any, req ApprovalRequest) app
 			cmd += " " + a
 		}
 	}
+	// Local terminal tools carry the command as a parameter: show it as the
+	// approval's command too, so every client (and an automated eval
+	// approver) sees exactly what will run.
+	if c, ok := params["command"].(string); ok && cmd == "" {
+		cmd = c
+	}
 	if tool == "" {
 		tool = req.Tool
 	}
