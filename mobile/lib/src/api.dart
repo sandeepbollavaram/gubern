@@ -321,6 +321,21 @@ class AgentInfo {
   final List<String> tools;
 }
 
+/// A workspace skill (SKILL.md): knowledge for the agent, never a grant.
+class SkillInfo {
+  SkillInfo.fromJson(Map<String, dynamic> j)
+    : name = j['name'] as String? ?? '',
+      description = j['description'] as String? ?? '',
+      scope = j['scope'] as String? ?? '',
+      path = j['path'] as String? ?? '',
+      hash = j['hash'] as String? ?? '',
+      allowedTools = [for (final t in (j['allowed_tools'] as List? ?? const [])) '$t'],
+      enabled = j['enabled'] as bool? ?? true;
+  final String name, description, scope, path, hash;
+  final List<String> allowedTools;
+  final bool enabled;
+}
+
 class RunInfo {
   RunInfo.fromJson(Map<String, dynamic> j)
     : id = j['id'] as String? ?? '',
@@ -348,6 +363,7 @@ class RunEvent {
   String get text => j['text'] as String? ?? '';
   String get decidedBy => j['decided_by'] as String? ?? '';
   String get decidedVia => j['decided_via'] as String? ?? '';
+  String get skillHash => j['skill_hash'] as String? ?? '';
   DateTime get at => _time(j['at']);
 
   /// The pending approval carried by approval_required / approval_decided.
@@ -432,6 +448,11 @@ extension GubernReads on GubernApi {
   Future<List<AgentInfo>> agents() async {
     final b = await _get('/api/agents/catalog');
     return [for (final a in (b['agents'] as List? ?? const [])) AgentInfo.fromJson(a as Map<String, dynamic>)];
+  }
+
+  Future<List<SkillInfo>> skills() async {
+    final b = await _get('/api/skills');
+    return [for (final s in (b['skills'] as List? ?? const [])) SkillInfo.fromJson(s as Map<String, dynamic>)];
   }
 
   Future<List<RunInfo>> runs({String? sessionId, int limit = 20}) async {

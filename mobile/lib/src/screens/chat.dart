@@ -51,6 +51,11 @@ class ApprovalItem extends Item {
   String decidedVia = '';
 }
 
+class SkillItem extends Item {
+  SkillItem(super.key, this.name, this.hash);
+  final String name, hash;
+}
+
 class StatusItem extends Item {
   StatusItem(super.key, this.text, this.tone);
   final String text;
@@ -223,6 +228,8 @@ class ChatController extends ChangeNotifier {
           it.decidedBy = ev.decidedBy;
           it.decidedVia = ev.decidedVia;
         }
+      case 'skill_activated':
+        if (ev.label.isNotEmpty) items.add(SkillItem(_k('sk'), ev.label, ev.skillHash));
       case 'run_finished':
         _finish(ev.status);
         return;
@@ -404,6 +411,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             AssistantItem() => _AssistantMessage(it),
                             ToolsItem() => _ToolsGroup(it, live: _c.running),
                             ApprovalItem() => _InlineApproval(it, onReview: () => _review(it)),
+                            SkillItem() => _SkillChip(it),
                             StatusItem() => _StatusLine(it),
                           },
                         ),
@@ -791,6 +799,38 @@ class _InlineApproval extends StatelessWidget {
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkillChip extends StatelessWidget {
+  const _SkillChip(this.it);
+  final SkillItem it;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = context.g;
+    return Padding(
+      padding: const EdgeInsets.only(left: 36),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Semantics(
+          label: 'Using skill ${it.name}',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(color: g.ai.withValues(alpha: .15), borderRadius: BorderRadius.circular(6)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.menu_book_outlined, size: 14, color: g.aiText),
+                const SizedBox(width: 6),
+                Text('Using skill ', style: TextStyle(color: g.aiText, fontSize: 12.5)),
+                Text(it.name, style: mono(context, size: 12, color: g.aiText, weight: FontWeight.w500)),
+              ],
+            ),
+          ),
         ),
       ),
     );

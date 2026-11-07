@@ -50,6 +50,7 @@ class FakeRuns {
         ..set('X-Gubern-Run-Id', 'run-1');
       r.write(': hello\n\n');
       _frame(r, {'type': 'text', 'run_id': 'run-1', 'seq': 1, 'text': 'Checking '});
+      _frame(r, {'type': 'skill_activated', 'run_id': 'run-1', 'label': 'dev-checks', 'skill_hash': 'ab' * 32});
       _frame(r, {'type': 'tool_start', 'run_id': 'run-1', 'seq': 2, 'step_id': 'st1', 'tool': 'run_terminal', 'label': 'go test ./...'});
       _frame(r, {'type': 'tool_end', 'run_id': 'run-1', 'seq': 3, 'step_id': 'st1', 'status': 'ok', 'duration_ms': 1200, 'output': 'ok'});
       // Connection drops here: no done frame.
@@ -99,6 +100,10 @@ void main() {
     final tools = c.items.whereType<ToolsItem>().single;
     expect(tools.steps.single.status, 'ok', reason: 'the replayed seq 3 must not overwrite the step');
     expect(tools.steps.single.durationMs, 1200);
+
+    final skill = c.items.whereType<SkillItem>().single;
+    expect(skill.name, 'dev-checks');
+    expect(skill.hash, hasLength(64));
 
     final ap = c.items.whereType<ApprovalItem>().single;
     expect(ap.state, 'approved');

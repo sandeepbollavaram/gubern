@@ -23,6 +23,7 @@ class _OperateTabState extends State<OperateTab> {
   HealingInfo? _health;
   List<RunInfo>? _runs;
   List<AgentInfo>? _agents;
+  List<SkillInfo>? _skills;
   bool _loaded = false;
 
   @override
@@ -40,6 +41,7 @@ class _OperateTabState extends State<OperateTab> {
       opt(api.healing()),
       opt(api.runs(limit: 12)),
       opt(api.agents()),
+      opt(api.skills()),
     ]);
     if (!mounted) return;
     setState(() {
@@ -48,6 +50,7 @@ class _OperateTabState extends State<OperateTab> {
       _health = r[2] as HealingInfo?;
       _runs = r[3] as List<RunInfo>?;
       _agents = r[4] as List<AgentInfo>?;
+      _skills = r[5] as List<SkillInfo>?;
       _loaded = true;
     });
   }
@@ -103,6 +106,7 @@ class _OperateTabState extends State<OperateTab> {
                         if (s != null && s.routeNames.isNotEmpty) stag(_RoutesPanel(status: s)),
                         stag(_RunsPanel(runs: _runs, onCancel: _cancel, onOpen: (r) => widget.scope.openChat(context, sessionId: r.sessionId))),
                         if (_agents != null && _agents!.isNotEmpty) stag(_AgentsPanel(agents: _agents!)),
+                        if (_skills != null) stag(_SkillsPanel(skills: _skills!)),
                         if (s != null) stag(_ServerPanel(status: s)),
                       ],
                     ),
@@ -394,6 +398,57 @@ class _AgentsPanel extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _SkillsPanel extends StatelessWidget {
+  const _SkillsPanel({required this.skills});
+  final List<SkillInfo> skills;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = context.g;
+    final on = skills.where((s) => s.enabled).length;
+    return Section(
+      title: 'Skills',
+      icon: Icons.menu_book_outlined,
+      trailing: Text('$on of ${skills.length} on', style: TextStyle(color: g.muted, fontSize: 12)),
+      child: skills.isEmpty
+          ? Text('No skills in this workspace.', style: TextStyle(color: g.muted))
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final s in skills)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(Icons.menu_book_outlined, size: 16, color: s.enabled ? g.aiText : g.muted),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(s.name, style: mono(context, size: 13, color: s.enabled ? g.text : g.muted, weight: FontWeight.w500)),
+                              const SizedBox(height: 2),
+                              Text(s.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: g.muted, fontSize: 12.5, height: 1.4)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Pill(label: s.enabled ? 'On' : 'Off', color: s.enabled ? g.ok : g.muted),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Text('Skills are switched on or off in the dashboard. They never grant permissions.', style: TextStyle(color: g.muted, fontSize: 12)),
+              ],
+            ),
     );
   }
 }
