@@ -1,6 +1,6 @@
 # Identity and authorization (Milestone A)
 
-Status: **design, being implemented** on `dev/dashboard-v2`. Covers
+Status: **implemented** on `dev/dashboard-v2` (milestone A). Covers
 milestone A in `dashboard-mobile-plan.md` §7 and resolves audit finding N6
 (`GUBERN_PRODUCTION_AUDIT.md`, also `docs/security.md`).
 
@@ -112,7 +112,7 @@ A grant without a resource value is invalid.
 |---|---|
 | `owner` | every scope on `*` |
 | `admin` | every scope on `*`; for a **service** principal, the same minus `approvals:decide` |
-| `operator` | `system:read`, `agents:read`, `agents:run` own, `sessions:read` own, `approvals:read` own, `approvals:decide` own (persons only), `runs:read` own, `runs:write`, `devops:read`, `devops:run`, `models:use`, `notify:send` |
+| `operator` | everything `viewer` has, plus `agents:run` own, `approvals:decide` own (persons only), `runs:write`, `devops:run`, `models:use`, `notify:send` |
 | `viewer` | `system:read`, `audit:read`, `security:read`, `agents:read`, `sessions:read` own, `approvals:read` own, `runs:read` own, `devops:read` |
 | `readonly` | `system:read` |
 
@@ -164,10 +164,20 @@ request ─► authenticate (credential) ─► resolve principal (identity stor
   a resource, but never an identity. No `X-User-*` header is read. The audit
   log records the principal id, never a caller-supplied name.
 - **Loopback trust** (`GUBERN_TRUST_LOOPBACK`, default on) no longer skips
-  authorization. It authenticates as the built-in service principal
-  `local-loopback`, granted exactly what loopback could reach before:
-  `system:read`, `system:manage`, `audit:read`, `security:read`. Relayed
+  authorization. A loopback request **without a credential** authenticates as
+  the built-in service principal `local-loopback` (scopes `system:read`,
+  `system:manage`, `audit:read`, `security:read`), and only on the eight
+  routes loopback reached before (`loopbackRoutes`). Trust is per route, not
+  per scope, so routes that share a scope but always needed a key
+  (`/api/logs`, `/api/ai/cost`, healing) still do. A loopback request that
+  presents a credential acts as that credential's principal. Relayed
   requests (fix F-06) never qualify.
+- **Studio** (`/studio/`) requires `system:manage` from a credential (owner or
+  admin), never loopback trust: its terminal is a shell outside the approval
+  gate.
+- **Other credentials:** OIDC is not wired (`start.go` passes nil). An OIDC
+  token would carry no key id, so it resolves to no principal and is refused
+  (401) until OIDC identities are linked as external identities.
 
 ## 7. Route authorization matrix
 
@@ -236,8 +246,8 @@ service principal.
 
 - `/health`, `/ready` and `/dashboard/` are public by design. They expose no
   data beyond the public health document and the static UI.
-- `/studio/` keeps its admin-key gate. Moving it to `identity:manage`-style
-  scopes is tracked as a gap.
+- `/studio/` requires `system:manage` from a credential, without loopback
+  trust (§6).
 - `/a2a/` is in-process only (shared token).
 - `/webhook/*` is per-channel signed traffic. Those identities are channel
   external identities (§8).

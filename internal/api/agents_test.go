@@ -166,11 +166,11 @@ func newAuthedAgentServer(t *testing.T, rt AgentRuntime) (*Server, string) {
 	s := New("127.0.0.1:0", holder, "test", discardLogger())
 	keys := auth.NewAPIKeyStore()
 	rbac := auth.NewRBAC()
-	_, secret, err := keys.Issue("agent-user", "default", []auth.Role{auth.RoleOperator}, "agent token", 0)
+	_, secret, err := keys.Issue("agent-user", "default", []auth.Role{auth.RoleAdmin}, "agent token", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 	s.SetAgentRuntime(rt)
 	return s, secret
 }

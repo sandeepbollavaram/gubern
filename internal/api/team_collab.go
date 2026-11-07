@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sandeepbollavaram/vortex/internal/authz"
 )
 
 // CommsRecord is one agent-communication entry exposed over the API. It mirrors
@@ -94,19 +96,23 @@ func (s *Server) SetCheckpointProvider(p CheckpointProvider) { s.checkpoints = p
 // registerTeamCollab attaches the collaboration routes to the mux. Called from
 // NewServer's route table.
 func (s *Server) registerTeamCollab(mux *http.ServeMux) {
-	mux.Handle("GET /api/agents/team/status", s.requireAPIKey(http.HandlerFunc(s.handleTeamAgents)))
-	mux.Handle("GET /api/agents/comms", s.requireAPIKey(http.HandlerFunc(s.handleComms)))
-	mux.Handle("GET /api/agents/comms/stream", s.requireAPIKey(http.HandlerFunc(s.handleCommsStream)))
-	mux.Handle("GET /api/agents/team/{id}/messages", s.requireAPIKey(http.HandlerFunc(s.handleAgentMessages)))
-	mux.Handle("POST /api/agents/{id}/chat", s.requireAPIKey(http.HandlerFunc(s.handleAgentDirectChat)))
-	mux.Handle("GET /api/checkpoints", s.requireAPIKey(http.HandlerFunc(s.handleCheckpointsList)))
-	mux.Handle("POST /api/checkpoints/{id}/approve", s.requireAPIKey(http.HandlerFunc(s.handleCheckpointApprove)))
-	mux.Handle("POST /api/checkpoints/{id}/reject", s.requireAPIKey(http.HandlerFunc(s.handleCheckpointReject)))
-	mux.Handle("POST /api/checkpoints/{id}/edit", s.requireAPIKey(http.HandlerFunc(s.handleCheckpointEdit)))
+	s.route(mux, "GET /api/agents/team/status", http.HandlerFunc(s.handleTeamAgents))
+	s.route(mux, "GET /api/agents/comms", http.HandlerFunc(s.handleComms))
+	s.route(mux, "GET /api/agents/comms/stream", http.HandlerFunc(s.handleCommsStream))
+	s.route(mux, "GET /api/agents/team/{id}/messages", http.HandlerFunc(s.handleAgentMessages))
+	s.route(mux, "POST /api/agents/{id}/chat", http.HandlerFunc(s.handleAgentDirectChat))
+	s.route(mux, "GET /api/checkpoints", http.HandlerFunc(s.handleCheckpointsList))
+	s.route(mux, "POST /api/checkpoints/{id}/approve", http.HandlerFunc(s.handleCheckpointApprove))
+	s.route(mux, "POST /api/checkpoints/{id}/reject", http.HandlerFunc(s.handleCheckpointReject))
+	s.route(mux, "POST /api/checkpoints/{id}/edit", http.HandlerFunc(s.handleCheckpointEdit))
 }
 
 // handleComms returns the recent agent-communication feed as JSON.
 func (s *Server) handleComms(w http.ResponseWriter, r *http.Request) {
+	// The feed mixes every session's traffic: it needs sessions:read on "*".
+	if !s.requireAll(w, r, authz.SessionsRead) {
+		return
+	}
 	limit := parseLimit(r.URL.Query().Get("limit"), 100)
 	feed := []CommsRecord{}
 	if s.comms != nil {
@@ -119,6 +125,10 @@ func (s *Server) handleComms(w http.ResponseWriter, r *http.Request) {
 // per-agent slice of the comms feed (e.g. a dashboard/TUI drill-down on a
 // single specialist). The id path segment names the agent.
 func (s *Server) handleAgentMessages(w http.ResponseWriter, r *http.Request) {
+	// The feed mixes every session's traffic: it needs sessions:read on "*".
+	if !s.requireAll(w, r, authz.SessionsRead) {
+		return
+	}
 	agentID := r.PathValue("id")
 	if agentID == "" {
 		http.Error(w, "agent id required", http.StatusBadRequest)
@@ -134,6 +144,10 @@ func (s *Server) handleAgentMessages(w http.ResponseWriter, r *http.Request) {
 
 // handleCommsStream streams agent-communication messages as Server-Sent Events.
 func (s *Server) handleCommsStream(w http.ResponseWriter, r *http.Request) {
+	// The feed mixes every session's traffic: it needs sessions:read on "*".
+	if !s.requireAll(w, r, authz.SessionsRead) {
+		return
+	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -201,23 +215,38 @@ func (s *Server) handleAgentDirectChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message required", http.StatusBadRequest)
 		return
 	}
+	// Like submit: no shared empty session, and the session is the caller's.
+	if req.SessionID == "" {
+		req.SessionID = newSessionID()
+	} else if !validSessionID(req.SessionID) {
+		http.Error(w, "invalid session_id", http.StatusBadRequest)
+		return
+	}
+	if !s.claim(w, r, authz.AgentsRun, resSession, req.SessionID) {
+		return
+	}
 	reply, err := s.agentChat.Chat(r.Context(), agentID, req.SessionID, req.Message)
 	if err != nil {
 		http.Error(w, "chat failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
-		"agent_id":  agentID,
-		"response":  reply,
-		"timestamp": time.Now(),
+		"agent_id":   agentID,
+		"session_id": req.SessionID,
+		"response":   reply,
+		"timestamp":  time.Now(),
 	})
 }
 
 // handleCheckpointsList returns pending/decided checkpoints.
-func (s *Server) handleCheckpointsList(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleCheckpointsList(w http.ResponseWriter, r *http.Request) {
 	list := []CheckpointRecord{}
 	if s.checkpoints != nil {
-		list = s.checkpoints.List()
+		for _, c := range s.checkpoints.List() {
+			if s.canAccess(r, authz.ApprovalsRead, resSession, c.SessionID) {
+				list = append(list, c)
+			}
+		}
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"checkpoints": list})
 }
@@ -229,6 +258,9 @@ func (s *Server) handleCheckpointApprove(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := r.PathValue("id")
+	if !s.checkpointAccess(w, r, id) {
+		return
+	}
 	if err := s.checkpoints.Approve(id); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -243,6 +275,9 @@ func (s *Server) handleCheckpointReject(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	id := r.PathValue("id")
+	if !s.checkpointAccess(w, r, id) {
+		return
+	}
 	var req struct {
 		Reason string `json:"reason"`
 	}
@@ -263,6 +298,9 @@ func (s *Server) handleCheckpointEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	if !s.checkpointAccess(w, r, id) {
+		return
+	}
 	var req struct {
 		Files []CheckpointFileEdit `json:"files"`
 	}
@@ -276,6 +314,18 @@ func (s *Server) handleCheckpointEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "edited"})
+}
+
+// checkpointAccess checks the caller may decide checkpoint id: it follows the
+// owner of the checkpoint's session. An unknown id is a 404.
+func (s *Server) checkpointAccess(w http.ResponseWriter, r *http.Request, id string) bool {
+	for _, c := range s.checkpoints.List() {
+		if c.ID == id {
+			return s.requireAccess(w, r, authz.ApprovalsDecide, resSession, c.SessionID)
+		}
+	}
+	http.Error(w, "checkpoint not found", http.StatusNotFound)
+	return false
 }
 
 // parseLimit parses a positive integer query parameter, falling back to def.

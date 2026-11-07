@@ -123,6 +123,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newTuneCommand())
 	root.AddCommand(newSetupCommand())
 	root.AddCommand(newKeysCommand())
+	root.AddCommand(newIdentityCommand())
 	root.AddCommand(newUICommand())
 	root.AddCommand(newCodeCommand())
 	root.AddCommand(newWatchdogCommand())

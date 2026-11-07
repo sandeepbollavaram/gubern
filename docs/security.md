@@ -38,22 +38,57 @@ gubern secret set jwt_secret '...' --expires-in 90d --rotate-every 30d
 
 API keys are bcrypt-hashed (with a SHA-256 prehash to fit bcrypt's 72-byte
 limit); plaintext is shown once and never stored. The store is written
-atomically on every issue/revoke. Keys carry RBAC roles (`admin`, `operator`,
-`viewer`, `readonly`), but today only admin-only routes check a role:
-`/api/keys`, and Studio (`/studio/`, enabled by `GUBERN_STUDIO_WORKSPACE`),
-whose terminal is a shell that doesn't go through the approval gate. Every
-other authenticated route accepts any valid key, so a `viewer` or
-`readonly` key can still run agents, approve checkpoints, and write files
-through them. Do not issue non-admin keys to anyone you would not trust with
-those actions. This is tracked as N6 in `GUBERN_PRODUCTION_AUDIT.md`.
+atomically on every issue/revoke.
 
-**Data-plane vs control-plane:** Agent runtime routes (`/api/agents/*`,
-including `GET /api/agents/catalog`), Forge, orchestration (`POST /api/orchestrate`,
-`GET /api/orchestration/*`), logs, and OpenAI-compatible `/v1/*` endpoints use
-`requireAPIKey` — they need a valid key even from loopback when auth is
-configured. Control-plane routes (`/internal/reload`, dashboard data under
-`/api/status`, etc.) may allow loopback without a key unless
-`GUBERN_TRUST_LOOPBACK=false`.
+**Identity and authorization** (design: `docs/design/identity-authorization.md`).
+Every key is bound to a **principal**: a person, or a service principal for
+automations. What a request may do comes from that principal's **scope
+grants**, checked by one default-deny authorizer on every protected route
+(`internal/api/authorize.go`, rules in `routeScopes`). Roles are only
+templates that produce grants:
+
+| Role | Can |
+|---|---|
+| `admin` / owner | everything; a *service* admin can't decide approvals |
+| `operator` | everything a viewer can, plus run agents and decide approvals on **its own** sessions, start builds and orchestrations, DevOps commands, `/v1/*`, notifications |
+| `viewer` | read status, audit, logs, agent catalog, and **its own** sessions, approvals and runs |
+| `readonly` | server status only |
+
+- **Approvals need a person.** Only a person principal can hold
+  `approvals:decide`; an API-issued key is always a service principal, so no
+  automation can approve its own actions.
+- **Resources have owners.** A session belongs to whoever starts it (an
+  empty `session_id` gets a fresh server-side id); approvals, checkpoints and
+  orchestration runs follow their session; Forge jobs belong to their creator.
+  Lists only show what the caller may open. Cross-session feeds (comms) and
+  research reports need a `*` grant.
+- **No escalation.** `POST /api/keys` refuses a role whose grants the caller
+  doesn't hold.
+- **Revocation is immediate.** Grants are read on every request.
+- **The identity comes only from the credential.** No header, query or body
+  field can name a principal.
+
+**Upgrading from a version before milestone A:** on first start, keys created
+by `gubern setup`, the TUI or first start are bound to the owner person. Every
+other key becomes a service principal with its role's grants (never
+approvals); a key with an unknown role gets none. This removes access that
+`viewer`, `operator` and `readonly` keys had by mistake (audit N6). To restore
+approvals for a key that a person uses, bind it to that person with `gubern
+identity bind-key <key-id> --principal <id>` (`gubern identity list` shows
+ids). Rolling back to an older binary reopens N6.
+
+**Owner recovery:** stop the server, then run `gubern identity
+recover-owner`. It refuses while a server answers, issues a new owner key into
+the `tui-key` file (0600) and prints only its id. There is no network
+equivalent.
+
+**Loopback trust:** without a key, a loopback caller acts as the built-in
+`local-loopback` service principal and reaches only the control-plane reads
+and reload/stop it reached before (`/internal/reload`, `/internal/shutdown`,
+`/metrics`, `/api/status`, `/api/plugins`, `/api/secrets/status`,
+`/api/audit`, `/api/audit/verify`). Set `GUBERN_TRUST_LOOPBACK=false` to
+require a key there too. Studio needs `system:manage` from a credential
+(owner or admin), never loopback.
 
 ## Audit log
 
@@ -67,8 +102,10 @@ archives after two years.
 Agent actions that need approval are recorded in three steps:
 `agent.approval.requested` (tool, risk, the action shown), `agent.approval.decided`
 (approved or rejected, and whether by the configured approver or the API) and
-`agent.action.executed` (success or the error). The entry doesn't name the
-person who approved: any valid API key can approve today (N6).
+`agent.action.executed` (success or the error). Deciding an approval over the
+API needs a person principal holding `approvals:decide` on that session.
+Recording the deciding principal in the approval entry comes with the
+durable approval service (milestone B).
 
 Each request carries an action id, a digest of the tool, its parameters and
 the preview, which is shown on the approval line and recorded in the audit

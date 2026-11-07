@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+
+	"github.com/sandeepbollavaram/vortex/internal/authz"
 )
 
 // ForgeJob mirrors a forge.Job for the API (kept here so api stays decoupled
@@ -61,7 +63,19 @@ func (s *Server) handleForgeBuild(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message is required", http.StatusBadRequest)
 		return
 	}
+	// A build attached to a session writes into it: the session must be the
+	// caller's (or the caller holds agents:run on "*").
+	if req.SessionID != "" {
+		if !validSessionID(req.SessionID) {
+			http.Error(w, "invalid session_id", http.StatusBadRequest)
+			return
+		}
+		if !s.claim(w, r, authz.AgentsRun, resSession, req.SessionID) {
+			return
+		}
+	}
 	id := s.forgeRuntime.Submit(r.Context(), req.Message, req.SessionID, req.ChatID)
+	s.recordOwner(r, resJob, id)
 	s.writeJSON(w, http.StatusOK, map[string]any{"job_id": id, "status": "started"})
 }
 
@@ -72,6 +86,9 @@ func (s *Server) handleForgeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	if !s.requireAccess(w, r, authz.RunsRead, resJob, id) {
+		return
+	}
 	job, ok := s.forgeRuntime.Get(id)
 	if !ok {
 		http.Error(w, "job not found", http.StatusNotFound)
@@ -81,10 +98,16 @@ func (s *Server) handleForgeStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleForgeJobs returns recent build jobs.
-func (s *Server) handleForgeJobs(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleForgeJobs(w http.ResponseWriter, r *http.Request) {
 	if s.forgeRuntime == nil {
 		http.Error(w, "forge not configured", http.StatusServiceUnavailable)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"jobs": s.forgeRuntime.List()})
+	jobs := []ForgeJob{}
+	for _, j := range s.forgeRuntime.List() {
+		if s.canAccess(r, authz.RunsRead, resJob, j.ID) {
+			jobs = append(jobs, j)
+		}
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
 }

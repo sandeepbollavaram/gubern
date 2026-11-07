@@ -99,11 +99,11 @@ func newCollabServer(t *testing.T) (*Server, string) {
 	s := New("127.0.0.1:0", holder, "test", discardLogger())
 	keys := auth.NewAPIKeyStore()
 	rbac := auth.NewRBAC()
-	_, secret, err := keys.Issue("collab-user", "default", []auth.Role{auth.RoleOperator}, "collab token", 0)
+	_, secret, err := keys.Issue("collab-user", "default", []auth.Role{auth.RoleAdmin}, "collab token", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 	return s, secret
 }
 
@@ -328,7 +328,7 @@ func TestCheckpoints_List(t *testing.T) {
 
 func TestCheckpoints_Approve(t *testing.T) {
 	s, secret := newCollabServer(t)
-	cp := &fakeCheckpointProvider{}
+	cp := &fakeCheckpointProvider{list: []CheckpointRecord{{ID: "cp-1", SessionID: "s1", Status: "pending"}}}
 	s.SetCheckpointProvider(cp)
 	rec := serve(s, authedReq(http.MethodPost, "/api/checkpoints/cp-1/approve", secret, ""))
 	if rec.Code != http.StatusOK {
@@ -341,7 +341,7 @@ func TestCheckpoints_Approve(t *testing.T) {
 
 func TestCheckpoints_Reject(t *testing.T) {
 	s, secret := newCollabServer(t)
-	cp := &fakeCheckpointProvider{}
+	cp := &fakeCheckpointProvider{list: []CheckpointRecord{{ID: "cp-2", SessionID: "s1", Status: "pending"}}}
 	s.SetCheckpointProvider(cp)
 	rec := serve(s, authedReq(http.MethodPost, "/api/checkpoints/cp-2/reject", secret, `{"reason":"nope"}`))
 	if rec.Code != http.StatusOK {
@@ -354,7 +354,7 @@ func TestCheckpoints_Reject(t *testing.T) {
 
 func TestCheckpoints_Edit(t *testing.T) {
 	s, secret := newCollabServer(t)
-	cp := &fakeCheckpointProvider{}
+	cp := &fakeCheckpointProvider{list: []CheckpointRecord{{ID: "cp-3", SessionID: "s1", Status: "pending"}}}
 	s.SetCheckpointProvider(cp)
 	body := `{"files":[{"path":"calc.py","content":"def add(a,b): return a+b"}]}`
 	rec := serve(s, authedReq(http.MethodPost, "/api/checkpoints/cp-3/edit", secret, body))
@@ -369,7 +369,7 @@ func TestCheckpoints_Edit(t *testing.T) {
 
 func TestCheckpoints_EditRequiresFiles(t *testing.T) {
 	s, secret := newCollabServer(t)
-	s.SetCheckpointProvider(&fakeCheckpointProvider{})
+	s.SetCheckpointProvider(&fakeCheckpointProvider{list: []CheckpointRecord{{ID: "cp-3", SessionID: "s1"}}})
 	rec := serve(s, authedReq(http.MethodPost, "/api/checkpoints/cp-3/edit", secret, `{"files":[]}`))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("empty edit = %d, want 400", rec.Code)

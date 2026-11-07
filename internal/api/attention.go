@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sandeepbollavaram/vortex/internal/authz"
 )
 
 // AttentionItem is one thing waiting on a person (GET /api/attention): a
@@ -40,11 +42,16 @@ func riskSeverity(risk string) string {
 	}
 }
 
-// attention gathers every item from the wired providers, most urgent first.
-func (s *Server) attention() []AttentionItem {
+// attention gathers every item from the wired providers that the caller may
+// see, most urgent first: approvals and checkpoints of sessions it can read
+// approvals for, and health items only with system:read.
+func (s *Server) attention(r *http.Request) []AttentionItem {
 	items := []AttentionItem{}
 	if lister, ok := s.agentRuntime.(pendingLister); ok && s.agentRuntime != nil {
 		for _, p := range lister.PendingApprovals() {
+			if !s.canAccess(r, authz.ApprovalsRead, resSession, p.SessionID) {
+				continue
+			}
 			exp := p.ExpiresAt
 			detail := p.Command
 			if detail == "" {
@@ -67,7 +74,7 @@ func (s *Server) attention() []AttentionItem {
 	}
 	if s.checkpoints != nil {
 		for _, c := range s.checkpoints.List() {
-			if c.Status != "" && c.Status != "pending" {
+			if (c.Status != "" && c.Status != "pending") || !s.canAccess(r, authz.ApprovalsRead, resSession, c.SessionID) {
 				continue
 			}
 			items = append(items, AttentionItem{
@@ -78,7 +85,7 @@ func (s *Server) attention() []AttentionItem {
 			})
 		}
 	}
-	if s.healingProvider != nil {
+	if s.healingProvider != nil && s.holds(r, authz.SystemRead) {
 		h := s.healingProvider()
 		for _, c := range h.Checks {
 			if c.Healthy {
@@ -119,9 +126,9 @@ func (s *Server) attention() []AttentionItem {
 }
 
 // handleAttention serves GET /api/attention.
-func (s *Server) handleAttention(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleAttention(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"items": s.attention()})
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": s.attention(r)})
 }
 
 func plural(n int, noun string) string {

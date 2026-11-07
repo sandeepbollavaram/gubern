@@ -1,6 +1,10 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/sandeepbollavaram/vortex/internal/authz"
+)
 
 // SetStudioHandler wires the Gubern Studio handler tree (mounted under
 // /studio/). Studio is a data-plane console (it can run terminals, git, DB
@@ -12,14 +16,13 @@ import "net/http"
 func (s *Server) SetStudioHandler(h http.Handler) { s.studioHandler = h }
 
 // handleStudio dispatches /studio/* to the registered studio handler or 404
-// when Studio is not configured. It requires the admin role: the terminal is
-// a shell, and git push and DB queries run, without the agent's approval
-// gate, so a viewer or operator key must not reach it (it would be more power
-// than issuing API keys, which is already admin-only).
+// when Studio is not configured. The terminal is a shell, and git push and DB
+// queries run without the agent's approval gate, so Studio needs
+// system:manage from a credential (owner or admin), never loopback trust.
 func (s *Server) handleStudio(w http.ResponseWriter, r *http.Request) {
 	if s.studioHandler == nil {
 		http.NotFound(w, r)
 		return
 	}
-	s.protectedAdmin(s.studioHandler).ServeHTTP(w, r)
+	s.authorizeWith(authz.SystemManage, false, s.studioHandler).ServeHTTP(w, r)
 }

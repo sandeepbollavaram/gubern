@@ -21,7 +21,7 @@ func healingServer(t *testing.T, provider func() HealingStatus) (*Server, string
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 	if provider != nil {
 		s.SetHealingProvider(provider)
 	}

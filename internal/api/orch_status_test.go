@@ -46,11 +46,11 @@ func orchStatusServer(t *testing.T, store OrchStoreReader) (*Server, string) {
 	s := New("127.0.0.1:0", holder, "test", discardLogger())
 	keys := auth.NewAPIKeyStore()
 	rbac := auth.NewRBAC()
-	_, secret, err := keys.Issue("u", "default", []auth.Role{auth.RoleOperator}, "tok", 0)
+	_, secret, err := keys.Issue("u", "default", []auth.Role{auth.RoleAdmin}, "tok", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 	if store != nil {
 		s.SetOrchStoreProvider(store)
 	}
@@ -185,13 +185,13 @@ func TestAPI_OrchRunTasksRequiresAuth(t *testing.T) {
 	}
 }
 
-// TestAPI_OrchEndpointsFollowDataPlaneContract pins the exposure contract
-// documented on OrchTaskInfo: the orchestration read endpoints behave exactly
-// like GET /api/agents/history/{id} — any valid key (any role) reads the full
-// task payload, an invalid key is 401, and loopback gets no bypass. If this
-// test starts failing because a role gate was added, update docs/security.md
-// and the history endpoints together so the data plane stays consistent.
-func TestAPI_OrchEndpointsFollowDataPlaneContract(t *testing.T) {
+// TestAPI_OrchEndpointsFollowOwnership pins the milestone A contract for the
+// orchestration and history reads (it replaces the old "any valid key reads
+// everything" contract, audit N6): a run follows its session's owner, a
+// principal with a "*" grant reads everything, an own-only principal reads
+// only its sessions, a role without the scope is refused, an invalid key is
+// 401 and loopback gets no bypass.
+func TestAPI_OrchEndpointsFollowOwnership(t *testing.T) {
 	store := &mockOrchStore{
 		runs: []OrchRunSummary{{ID: "run-a", Goal: "g", SessionID: "s", Status: "done"}},
 		tasks: map[string][]OrchTaskInfo{
@@ -203,39 +203,78 @@ func TestAPI_OrchEndpointsFollowDataPlaneContract(t *testing.T) {
 	s := New("127.0.0.1:0", holder, "test", discardLogger())
 	keys := auth.NewAPIKeyStore()
 	rbac := auth.NewRBAC()
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	st := wireTestAuth(t, s, keys, rbac)
 	s.SetOrchStoreProvider(store)
 	s.SetAgentRuntime(stubRuntime{})
 
+	secrets := map[auth.Role]string{}
+	principals := map[auth.Role]string{}
 	for _, role := range []auth.Role{auth.RoleAdmin, auth.RoleOperator, auth.RoleViewer, auth.RoleReadonly} {
-		_, secret, err := keys.Issue("u-"+string(role), "default", []auth.Role{role}, "tok", 0)
+		k, secret, err := keys.Issue("u-"+string(role), "default", []auth.Role{role}, "tok", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, path := range []string{
-			"/api/orchestration/runs",
-			"/api/orchestration/runs/run-a/tasks",
-			"/api/agents/history/sess-1", // the comparable existing endpoint
-		} {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			req.RemoteAddr = "203.0.113.9:4444" // non-loopback
-			req.Header.Set("X-API-Key", secret)
-			rec := serve(s, req)
-			if rec.Code != http.StatusOK {
-				t.Errorf("role %s GET %s = %d, want 200 (data-plane: any valid key)", role, path, rec.Code)
-			}
+		secrets[role] = secret
+		principals[role] = bindTestPerson(t, st, k)
+	}
+	get := func(role auth.Role, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "203.0.113.9:4444" // non-loopback
+		req.Header.Set("X-API-Key", secrets[role])
+		return serve(s, req)
+	}
+	runCount := func(role auth.Role) int {
+		var body struct {
+			Runs []OrchRunSummary `json:"runs"`
 		}
-		// Full payload (Input/Result/Meta) is returned to every role.
-		req := httptest.NewRequest(http.MethodGet, "/api/orchestration/runs/run-a/tasks", nil)
-		req.Header.Set("X-API-Key", secret)
+		_ = json.Unmarshal(get(role, "/api/orchestration/runs").Body.Bytes(), &body)
+		return len(body.Runs)
+	}
+
+	// Nobody owns session "s" yet: only the "*" holder sees the run.
+	if rec := get(auth.RoleAdmin, "/api/orchestration/runs/run-a/tasks"); rec.Code != http.StatusOK {
+		t.Fatalf("admin tasks = %d", rec.Code)
+	} else {
 		var body struct {
 			Tasks []OrchTaskInfo `json:"tasks"`
 		}
-		_ = json.Unmarshal(serve(s, req).Body.Bytes(), &body)
-		if len(body.Tasks) != 1 || body.Tasks[0].Input != "in" || body.Tasks[0].Result != "out" ||
-			body.Tasks[0].Meta["permission_profile"] != "read_only" {
-			t.Errorf("role %s: task payload = %+v", role, body.Tasks)
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		if len(body.Tasks) != 1 || body.Tasks[0].Result != "out" {
+			t.Errorf("admin task payload = %+v", body.Tasks)
 		}
+	}
+	if n := runCount(auth.RoleAdmin); n != 1 {
+		t.Errorf("admin runs = %d, want 1", n)
+	}
+	for _, role := range []auth.Role{auth.RoleOperator, auth.RoleViewer} {
+		if n := runCount(role); n != 0 {
+			t.Errorf("%s sees %d runs of a session it does not own", role, n)
+		}
+		if rec := get(role, "/api/orchestration/runs/run-a/tasks"); rec.Code != http.StatusForbidden {
+			t.Errorf("%s tasks of another session = %d, want 403", role, rec.Code)
+		}
+		if rec := get(role, "/api/agents/history/sess-1"); rec.Code != http.StatusForbidden {
+			t.Errorf("%s history of another session = %d, want 403", role, rec.Code)
+		}
+	}
+	for _, path := range []string{"/api/orchestration/runs", "/api/orchestration/runs/run-a/tasks", "/api/agents/history/sess-1"} {
+		if rec := get(auth.RoleReadonly, path); rec.Code != http.StatusForbidden {
+			t.Errorf("readonly %s = %d, want 403 (missing scope)", path, rec.Code)
+		}
+	}
+
+	// Once the operator owns session "s", it reads that run, and only it.
+	if _, err := st.Claim(resSession, "s", principals[auth.RoleOperator]); err != nil {
+		t.Fatal(err)
+	}
+	if n := runCount(auth.RoleOperator); n != 1 {
+		t.Errorf("operator runs of own session = %d, want 1", n)
+	}
+	if rec := get(auth.RoleOperator, "/api/orchestration/runs/run-a/tasks"); rec.Code != http.StatusOK {
+		t.Errorf("operator tasks of own session = %d, want 200", rec.Code)
+	}
+	if n := runCount(auth.RoleViewer); n != 0 {
+		t.Errorf("viewer sees the operator's run")
 	}
 
 	// Invalid key → 401 (same JSON error shape the dashboard maps to ApiAuthError).

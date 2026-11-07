@@ -41,7 +41,7 @@ func authedServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 	return s, secret
 }
 

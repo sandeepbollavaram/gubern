@@ -21,6 +21,7 @@ import (
 	"github.com/sandeepbollavaram/vortex/internal/auth"
 	"github.com/sandeepbollavaram/vortex/internal/config"
 	"github.com/sandeepbollavaram/vortex/internal/dashboard"
+	"github.com/sandeepbollavaram/vortex/internal/identity"
 	proxyhttp "github.com/sandeepbollavaram/vortex/internal/proxy/http"
 	"github.com/sandeepbollavaram/vortex/internal/security"
 	"github.com/sandeepbollavaram/vortex/pkg/logger"
@@ -56,6 +57,12 @@ type Server struct {
 	authMW func(http.Handler) http.Handler
 	keys   *auth.APIKeyStore
 	rbac   *auth.RBAC
+	// identity maps credentials to principals and holds grants and
+	// resource ownership (milestone A). Wired via SetIdentity.
+	identity *identity.Store
+	// registeredRoutes lists the protected patterns registered through
+	// route, for the registry completeness test.
+	registeredRoutes []string
 
 	// auditLog records security-relevant API events (reload, key create/revoke).
 	// nil disables audit logging (used by unit tests).
@@ -396,70 +403,69 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	// Protected endpoints — wrapped at request time with the auth middleware
 	// (if one has been wired via SetAuth) so a missing/invalid credential is
 	// rejected before the handler runs.
-	mux.Handle("POST /internal/reload", s.protected(http.HandlerFunc(s.handleInternalReload)))
+	s.route(mux, "POST /internal/reload", http.HandlerFunc(s.handleInternalReload))
 	// /internal/shutdown is the SIGTERM equivalent used by `gubern stop` from
 	// the same host, so it honours loopback trust like reload. Operators behind
 	// a same-host reverse proxy set GUBERN_TRUST_LOOPBACK=false to require a
 	// credential here too (production audit M1) — see protected().
-	mux.Handle("POST /internal/shutdown", s.protected(http.HandlerFunc(s.handleInternalShutdown)))
+	s.route(mux, "POST /internal/shutdown", http.HandlerFunc(s.handleInternalShutdown))
 	// /metrics is protected like the control plane: reachable from localhost
 	// (scrapers commonly run on-box) or with a valid key.
-	mux.Handle("GET /metrics", s.protected(http.HandlerFunc(s.handleMetrics)))
-	mux.Handle("GET /api/keys", s.protectedAdmin(http.HandlerFunc(s.handleListKeys)))
-	mux.Handle("POST /api/keys", s.protectedAdmin(http.HandlerFunc(s.handleCreateKey)))
-	mux.Handle("DELETE /api/keys/{id}", s.protectedAdmin(http.HandlerFunc(s.handleRevokeKey)))
+	s.route(mux, "GET /metrics", http.HandlerFunc(s.handleMetrics))
+	s.route(mux, "GET /api/keys", http.HandlerFunc(s.handleListKeys))
+	s.route(mux, "POST /api/keys", http.HandlerFunc(s.handleCreateKey))
+	s.route(mux, "DELETE /api/keys/{id}", http.HandlerFunc(s.handleRevokeKey))
 
 	// Dashboard data endpoints (protected: localhost or valid key).
-	mux.Handle("GET /api/status", s.protected(http.HandlerFunc(s.handleStatus)))
-	mux.Handle("GET /api/ai/cost", s.requireAPIKey(http.HandlerFunc(s.handleAICost)))
-	mux.Handle("GET /api/keys/status", s.requireAPIKey(http.HandlerFunc(s.handleKeyStatus)))
-	mux.Handle("GET /api/healing/status", s.requireAPIKey(http.HandlerFunc(s.handleHealingStatus)))
-	mux.Handle("GET /api/healing/events", s.requireAPIKey(http.HandlerFunc(s.handleHealingEvents)))
-	mux.Handle("GET /api/research/reports", s.requireAPIKey(http.HandlerFunc(s.handleResearchReports)))
-	mux.Handle("GET /api/research/reports/{name}", s.requireAPIKey(http.HandlerFunc(s.handleResearchReport)))
-	mux.Handle("GET /api/devops/servers", s.requireAPIKey(http.HandlerFunc(s.handleDevOpsServers)))
-	mux.Handle("POST /api/devops/command", s.requireAPIKey(http.HandlerFunc(s.handleDevOpsCommand)))
-	mux.Handle("POST /api/pipeline/analyze", s.requireAPIKey(http.HandlerFunc(s.handlePipelineAnalyze)))
-	mux.Handle("POST /api/orchestrate", s.requireAPIKey(http.HandlerFunc(s.handleOrchestrate)))
-	mux.Handle("GET /api/orchestration/runs", s.requireAPIKey(http.HandlerFunc(s.handleOrchRuns)))
-	mux.Handle("GET /api/orchestration/runs/{id}/tasks", s.requireAPIKey(http.HandlerFunc(s.handleOrchRunTasks)))
-	mux.Handle("GET /api/secrets/status", s.protected(http.HandlerFunc(s.handleSecretsStatus)))
-	mux.Handle("GET /api/plugins", s.protected(http.HandlerFunc(s.handlePlugins)))
-	mux.Handle("GET /api/audit", s.protected(http.HandlerFunc(s.handleAudit)))
-	mux.Handle("POST /api/audit/verify", s.protected(http.HandlerFunc(s.handleAuditVerify)))
+	s.route(mux, "GET /api/status", http.HandlerFunc(s.handleStatus))
+	s.route(mux, "GET /api/ai/cost", http.HandlerFunc(s.handleAICost))
+	s.route(mux, "GET /api/keys/status", http.HandlerFunc(s.handleKeyStatus))
+	s.route(mux, "GET /api/healing/status", http.HandlerFunc(s.handleHealingStatus))
+	s.route(mux, "GET /api/healing/events", http.HandlerFunc(s.handleHealingEvents))
+	s.route(mux, "GET /api/research/reports", http.HandlerFunc(s.handleResearchReports))
+	s.route(mux, "GET /api/research/reports/{name}", http.HandlerFunc(s.handleResearchReport))
+	s.route(mux, "GET /api/devops/servers", http.HandlerFunc(s.handleDevOpsServers))
+	s.route(mux, "POST /api/devops/command", http.HandlerFunc(s.handleDevOpsCommand))
+	s.route(mux, "POST /api/pipeline/analyze", http.HandlerFunc(s.handlePipelineAnalyze))
+	s.route(mux, "POST /api/orchestrate", http.HandlerFunc(s.handleOrchestrate))
+	s.route(mux, "GET /api/orchestration/runs", http.HandlerFunc(s.handleOrchRuns))
+	s.route(mux, "GET /api/orchestration/runs/{id}/tasks", http.HandlerFunc(s.handleOrchRunTasks))
+	s.route(mux, "GET /api/secrets/status", http.HandlerFunc(s.handleSecretsStatus))
+	s.route(mux, "GET /api/plugins", http.HandlerFunc(s.handlePlugins))
+	s.route(mux, "GET /api/audit", http.HandlerFunc(s.handleAudit))
+	s.route(mux, "POST /api/audit/verify", http.HandlerFunc(s.handleAuditVerify))
 
 	// Namespace management (admin only).
 	// Agent runtime (M10).
 	// Agent endpoints are the data plane (they can run tools), so unlike the
 	// /internal/* control plane they require a real API key even from localhost
 	// (no loopback bypass). Submit is additionally rate-limited per IP.
-	mux.Handle("POST /api/agents/submit",
-		s.requireAPIKey(s.rateLimitAgents(http.HandlerFunc(s.handleAgentSubmit))))
-	mux.Handle("GET /api/agents/status", s.requireAPIKey(http.HandlerFunc(s.handleAgentStatus)))
-	mux.Handle("GET /api/agents/catalog", s.requireAPIKey(http.HandlerFunc(s.handleAgentCatalog)))
-	mux.Handle("POST /api/agents/approve", s.requireAPIKey(http.HandlerFunc(s.handleAgentApprove)))
-	mux.Handle("GET /api/agents/pending", s.requireAPIKey(http.HandlerFunc(s.handleAgentPending)))
-	mux.Handle("GET /api/attention", s.requireAPIKey(http.HandlerFunc(s.handleAttention)))
-	mux.Handle("GET /api/agents/history", s.requireAPIKey(http.HandlerFunc(s.handleAgentHistory)))
-	mux.Handle("GET /api/agents/history/{id}", s.requireAPIKey(http.HandlerFunc(s.handleAgentSessionHistory)))
+	s.route(mux, "POST /api/agents/submit", s.rateLimitAgents(http.HandlerFunc(s.handleAgentSubmit)))
+	s.route(mux, "GET /api/agents/status", http.HandlerFunc(s.handleAgentStatus))
+	s.route(mux, "GET /api/agents/catalog", http.HandlerFunc(s.handleAgentCatalog))
+	s.route(mux, "POST /api/agents/approve", http.HandlerFunc(s.handleAgentApprove))
+	s.route(mux, "GET /api/agents/pending", http.HandlerFunc(s.handleAgentPending))
+	s.route(mux, "GET /api/attention", http.HandlerFunc(s.handleAttention))
+	s.route(mux, "GET /api/agents/history", http.HandlerFunc(s.handleAgentHistory))
+	s.route(mux, "GET /api/agents/history/{id}", http.HandlerFunc(s.handleAgentSessionHistory))
 
 	// Gubern Forge (M13) — autonomous app builder. Data-plane: requires a key.
-	mux.Handle("POST /api/forge/build", s.requireAPIKey(http.HandlerFunc(s.handleForgeBuild)))
-	mux.Handle("GET /api/forge/status/{id}", s.requireAPIKey(http.HandlerFunc(s.handleForgeStatus)))
-	mux.Handle("GET /api/forge/jobs", s.requireAPIKey(http.HandlerFunc(s.handleForgeJobs)))
+	s.route(mux, "POST /api/forge/build", http.HandlerFunc(s.handleForgeBuild))
+	s.route(mux, "GET /api/forge/status/{id}", http.HandlerFunc(s.handleForgeStatus))
+	s.route(mux, "GET /api/forge/jobs", http.HandlerFunc(s.handleForgeJobs))
 
 	// Recent structured logs (for the TUI log viewer), auth-gated.
-	mux.Handle("GET /api/logs", s.requireAPIKey(http.HandlerFunc(s.handleLogs)))
+	s.route(mux, "GET /api/logs", http.HandlerFunc(s.handleLogs))
 
 	// Outbound notification (the TUI code view's [T] Telegram forward).
-	mux.Handle("POST /api/notify", s.requireAPIKey(http.HandlerFunc(s.handleNotify)))
+	s.route(mux, "POST /api/notify", http.HandlerFunc(s.handleNotify))
 
 	// OpenAI-compatible surface (upgrade 3): lets any OpenAI-speaking tool
 	// (Claude Code, Aider, Cline, Cursor) use Gubern as its AI backend. Data
 	// plane — requires a key (Bearer or X-API-Key) even from localhost.
-	mux.Handle("GET /v1/models", s.requireAPIKey(http.HandlerFunc(s.handleOpenAIModels)))
-	mux.Handle("POST /v1/chat/completions", s.requireAPIKey(http.HandlerFunc(s.handleChatCompletions)))
-	mux.Handle("POST /v1/responses", s.requireAPIKey(http.HandlerFunc(s.handleResponses)))
+	s.route(mux, "GET /v1/models", http.HandlerFunc(s.handleOpenAIModels))
+	s.route(mux, "POST /v1/chat/completions", http.HandlerFunc(s.handleChatCompletions))
+	s.route(mux, "POST /v1/responses", http.HandlerFunc(s.handleResponses))
 
 	// Messaging webhooks (M11): no API-key auth (each verifies its own platform
 	// signature), per-IP rate limited. Both GET (WhatsApp verification) and POST
@@ -474,17 +480,17 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	// the in-process coordinator holds (RPC submits tasks that write files).
 	// 404 when team mode is off.
 	mux.HandleFunc("/a2a/", s.handleA2A)
-	mux.Handle("GET /api/team/agents", s.requireAPIKey(http.HandlerFunc(s.handleTeamAgents)))
-	mux.Handle("GET /api/team/status", s.requireAPIKey(http.HandlerFunc(s.handleTeamAgents)))
+	s.route(mux, "GET /api/team/agents", http.HandlerFunc(s.handleTeamAgents))
+	s.route(mux, "GET /api/team/status", http.HandlerFunc(s.handleTeamAgents))
 
 	// Agent-team collaboration (AG-UI File 6): comms feed + SSE, direct chat,
 	// checkpoint review.
 	s.registerTeamCollab(mux)
 
-	mux.Handle("GET /api/namespaces", s.protectedAdmin(http.HandlerFunc(s.handleListNamespaces)))
-	mux.Handle("POST /api/namespaces", s.protectedAdmin(http.HandlerFunc(s.handleCreateNamespace)))
-	mux.Handle("DELETE /api/namespaces/{id}", s.protectedAdmin(http.HandlerFunc(s.handleDeleteNamespace)))
-	mux.Handle("GET /api/namespaces/{id}/stats", s.protectedAdmin(http.HandlerFunc(s.handleNamespaceStats)))
+	s.route(mux, "GET /api/namespaces", http.HandlerFunc(s.handleListNamespaces))
+	s.route(mux, "POST /api/namespaces", http.HandlerFunc(s.handleCreateNamespace))
+	s.route(mux, "DELETE /api/namespaces/{id}", http.HandlerFunc(s.handleDeleteNamespace))
+	s.route(mux, "GET /api/namespaces/{id}/stats", http.HandlerFunc(s.handleNamespaceStats))
 
 	// Server-level protection (M19), outermost-in: security headers,
 	// correlation IDs, per-IP burst auto-banning, then the global request
@@ -621,23 +627,6 @@ func (s *Server) keyLimit(h http.Handler) http.Handler {
 	})
 }
 
-// protected wraps h with the auth middleware (if wired) — except for loopback
-// requests, which are allowed through without a credential WHEN loopback trust
-// is enabled (the default). The /internal/* control-plane endpoints stand in
-// for SIGHUP/SIGTERM used by `gubern reload`/`stop`, so an on-box call is
-// implicitly trusted. Operators behind a same-host reverse proxy disable the
-// bypass with GUBERN_TRUST_LOOPBACK=false (production audit M1). With no auth
-// wired the handler runs unchanged.
-func (s *Server) protected(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.authMW == nil || (s.trustLoopback && loopbackTrusted(r)) {
-			h.ServeHTTP(w, r)
-			return
-		}
-		s.authMW(s.keyLimit(h)).ServeHTTP(w, r)
-	})
-}
-
 // loopbackTrustEnabled reports whether loopback callers bypass control-plane
 // auth. Enabled by default; set GUBERN_TRUST_LOOPBACK=false/0/no to disable.
 func loopbackTrustEnabled() bool {
@@ -647,19 +636,6 @@ func loopbackTrustEnabled() bool {
 	default:
 		return true
 	}
-}
-
-// protectedAdmin is like protected but additionally requires the admin role,
-// stamped into the context so the auth middleware enforces it.
-func (s *Server) protectedAdmin(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.authMW == nil {
-			h.ServeHTTP(w, r)
-			return
-		}
-		r = r.WithContext(auth.SetRequiredRole(r.Context(), auth.RoleAdmin))
-		s.authMW(s.keyLimit(h)).ServeHTTP(w, r)
-	})
 }
 
 // correlationMiddleware ensures every request carries a correlation ID. It

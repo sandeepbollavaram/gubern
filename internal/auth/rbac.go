@@ -64,6 +64,11 @@ type User struct {
 	OrgID  string
 	TeamID string
 	Roles  []Role
+	// KeyID is the id of the API key that authenticated the request ("" for
+	// other credentials). The identity store maps it to a principal; ID,
+	// OrgID and Roles are the key's free-text labels and are never used as an
+	// identity for authorization.
+	KeyID string
 }
 
 // RBAC holds role definitions and answers authorization questions. It is safe

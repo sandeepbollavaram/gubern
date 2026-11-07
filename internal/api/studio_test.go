@@ -16,7 +16,7 @@ func TestStudio_AdminOnly(t *testing.T) {
 	s := New("127.0.0.1:0", holder, "test", discardLogger())
 	keys := auth.NewAPIKeyStore()
 	rbac := auth.NewRBAC()
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	st := wireTestAuth(t, s, keys, rbac)
 	s.SetStudioHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -28,10 +28,11 @@ func TestStudio_AdminOnly(t *testing.T) {
 		auth.RoleReadonly: http.StatusForbidden,
 	}
 	for role, code := range want {
-		_, secret, err := keys.Issue("u-"+string(role), "default", []auth.Role{role}, "tok", 0)
+		k, secret, err := keys.Issue("u-"+string(role), "default", []auth.Role{role}, "tok", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
+		bindTestPerson(t, st, k)
 		for _, remote := range []string{"203.0.113.9:4444", "127.0.0.1:4444"} {
 			req := httptest.NewRequest(http.MethodGet, "/studio/git/status", nil)
 			req.RemoteAddr = remote

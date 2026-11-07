@@ -14,13 +14,14 @@ import (
 	"github.com/sandeepbollavaram/vortex/internal/testutil"
 )
 
-// seedAdminKey issues an admin API key, saves the key store to a temp file, and
-// points GUBERN_APIKEY_STORE at it so the started server loads it. It returns
-// the plaintext admin secret.
+// seedAdminKey issues the local operator's bootstrap key (what `gubern setup`
+// writes), saves the key store to a temp file, and points GUBERN_APIKEY_STORE
+// at it so the started server loads it. The server binds it to the owner
+// person (milestone A). It returns the plaintext secret.
 func seedAdminKey(t *testing.T) string {
 	t.Helper()
 	store := auth.NewAPIKeyStore()
-	_, secret, err := store.Issue("admin", "default", []auth.Role{auth.RoleAdmin}, "integration admin", 0)
+	_, secret, err := store.Issue("admin", "default", []auth.Role{auth.RoleAdmin}, "setup key", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

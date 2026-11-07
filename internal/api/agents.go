@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sandeepbollavaram/vortex/internal/agentevents"
+	"github.com/sandeepbollavaram/vortex/internal/authz"
 	"github.com/sandeepbollavaram/vortex/internal/security"
 )
 
@@ -125,6 +126,14 @@ func (s *Server) handleAgentSubmit(w http.ResponseWriter, r *http.Request) {
 	// the runtime generates one server-side.
 	if req.SessionID != "" && !validSessionID(req.SessionID) {
 		http.Error(w, "invalid session_id (allowed: letters, digits, '-', '_', '.', max 64)", http.StatusBadRequest)
+		return
+	}
+	// The session belongs to whoever starts it; continuing someone else's
+	// session needs a "*" grant (milestone A, resource ownership).
+	if req.SessionID == "" {
+		req.SessionID = newSessionID()
+	}
+	if !s.claim(w, r, authz.AgentsRun, resSession, req.SessionID) {
 		return
 	}
 
@@ -278,11 +287,13 @@ type pendingLister interface {
 
 // handleAgentPending lists actions waiting for a human decision across
 // sessions (GET /api/agents/pending), for the dashboard Inbox and the app.
-func (s *Server) handleAgentPending(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleAgentPending(w http.ResponseWriter, r *http.Request) {
 	pending := []agentevents.Pending{}
 	if lister, ok := s.agentRuntime.(pendingLister); ok && s.agentRuntime != nil {
-		if p := lister.PendingApprovals(); p != nil {
-			pending = p
+		for _, p := range lister.PendingApprovals() {
+			if s.canAccess(r, authz.ApprovalsRead, resSession, p.SessionID) {
+				pending = append(pending, p)
+			}
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -322,6 +333,9 @@ func (s *Server) handleAgentApprove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session_id is required", http.StatusBadRequest)
 		return
 	}
+	if !s.requireAccess(w, r, authz.ApprovalsDecide, resSession, req.SessionID) {
+		return
+	}
 	var transcript string
 	var matched bool
 	if req.ActionID != "" {
@@ -348,14 +362,16 @@ func (s *Server) handleAgentApprove(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAgentHistory lists stored conversation sessions.
-func (s *Server) handleAgentHistory(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleAgentHistory(w http.ResponseWriter, r *http.Request) {
 	if s.agentRuntime == nil {
 		http.Error(w, "agent runtime not configured", http.StatusServiceUnavailable)
 		return
 	}
-	sessions := s.agentRuntime.ListSessions()
-	if sessions == nil {
-		sessions = []SessionSummary{}
+	sessions := []SessionSummary{}
+	for _, ss := range s.agentRuntime.ListSessions() {
+		if s.canAccess(r, authz.SessionsRead, resSession, ss.SessionID) {
+			sessions = append(sessions, ss)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"sessions": sessions})
@@ -374,6 +390,9 @@ func (s *Server) handleAgentSessionHistory(w http.ResponseWriter, r *http.Reques
 	}
 	if !validSessionID(id) {
 		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+	if !s.requireAccess(w, r, authz.SessionsRead, resSession, id) {
 		return
 	}
 	msgs := s.agentRuntime.SessionHistory(id)
@@ -409,21 +428,6 @@ func wantsSSE(r *http.Request) bool {
 		}
 	}
 	return false
-}
-
-// requireAPIKey enforces API-key authentication with NO localhost bypass. The
-// agent endpoints are a data plane (tools can touch the filesystem, run
-// commands, call the network), so they must not inherit the control-plane
-// loopback exemption used by protected(). When no auth middleware is configured
-// (unit tests that don't call SetAuth), it passes through.
-func (s *Server) requireAPIKey(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.authMW == nil {
-			h.ServeHTTP(w, r)
-			return
-		}
-		s.authMW(s.keyLimit(h)).ServeHTTP(w, r)
-	})
 }
 
 // rateLimitAgents applies the per-IP agent submit rate limiter, returning 429

@@ -221,6 +221,20 @@ func (s *APIKeyStore) Revoke(id string) error {
 	return nil
 }
 
+// All returns every live (unrevoked) key across all orgs, with hashes
+// cleared. The identity migration uses it to bind each key to a principal.
+func (s *APIKeyStore) All() []APIKey {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]APIKey, 0, len(s.keys))
+	for _, k := range s.keys {
+		k.Hash = ""
+		k.Roles = append([]Role(nil), k.Roles...)
+		out = append(out, k)
+	}
+	return out
+}
+
 // IsRevoked reports whether id was revoked.
 func (s *APIKeyStore) IsRevoked(id string) bool {
 	s.mu.RLock()

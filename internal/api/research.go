@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sandeepbollavaram/vortex/internal/authz"
 )
 
 // ResearchReport is a saved research report summary (GET /api/research/reports).
@@ -22,7 +24,11 @@ func (s *Server) SetResearchProvider(list func() []ResearchReport, get func(name
 }
 
 // handleResearchReports returns the list of saved research reports.
-func (s *Server) handleResearchReports(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleResearchReports(w http.ResponseWriter, r *http.Request) {
+	// Reports have no owner yet, so listing them needs runs:read on "*".
+	if !s.requireAll(w, r, authz.RunsRead) {
+		return
+	}
 	if s.researchList == nil {
 		s.writeJSON(w, http.StatusOK, map[string]any{"reports": []ResearchReport{}})
 		return
@@ -37,6 +43,9 @@ func (s *Server) handleResearchReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/api/research/reports/")
+	if !s.requireAccess(w, r, authz.RunsRead, resReport, name) {
+		return
+	}
 	md, ok := s.researchGet(name)
 	if !ok {
 		http.Error(w, "report not found", http.StatusNotFound)

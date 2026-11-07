@@ -40,7 +40,7 @@ func TestAgentCatalog_RequiresAPIKey(t *testing.T) {
 	if _, _, err := keys.Issue("u", "default", []auth.Role{auth.RoleOperator}, "tok", 0); err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/agents/catalog", nil)
 	req.RemoteAddr = "127.0.0.1:5555"

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sandeepbollavaram/vortex/internal/authz"
 	"github.com/sandeepbollavaram/vortex/internal/orchestration"
 )
 
@@ -150,10 +151,16 @@ func (s *Server) handleOrchRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := parseBoundedLimit(r.URL.Query().Get("limit"), defaultOrchRunLimit, maxOrchRunLimit)
-	runs, err := s.orchStore.ListRecent(limit)
+	all, err := s.orchStore.ListRecent(limit)
 	if err != nil {
 		http.Error(w, "failed to list orchestration runs", http.StatusInternalServerError)
 		return
+	}
+	runs := []OrchRunSummary{}
+	for _, run := range all {
+		if s.canReadRun(r, run) {
+			runs = append(runs, run)
+		}
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
 }
@@ -168,6 +175,9 @@ func (s *Server) handleOrchRunTasks(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusOK, map[string]any{"run_id": runID, "tasks": []OrchTaskInfo{}})
 		return
 	}
+	if !s.runAccess(w, r, runID) {
+		return
+	}
 	limit := parseBoundedLimit(r.URL.Query().Get("limit"), defaultOrchTaskLimit, maxOrchTaskLimit)
 	tasks, err := s.orchStore.LoadRunTasks(runID)
 	if err != nil {
@@ -178,6 +188,33 @@ func (s *Server) handleOrchRunTasks(w http.ResponseWriter, r *http.Request) {
 		tasks = tasks[:limit]
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"run_id": runID, "tasks": tasks})
+}
+
+// canReadRun reports whether the caller may read run: a run started in a
+// session follows that session's owner; a run without one needs "*".
+func (s *Server) canReadRun(r *http.Request, run OrchRunSummary) bool {
+	if run.SessionID != "" {
+		return s.canAccess(r, authz.RunsRead, resSession, run.SessionID)
+	}
+	return s.canAccess(r, authz.RunsRead, resRun, run.ID)
+}
+
+// runAccess checks the caller may read run id, writing the 403 itself.
+func (s *Server) runAccess(w http.ResponseWriter, r *http.Request, id string) bool {
+	run := OrchRunSummary{ID: id}
+	if recent, err := s.orchStore.ListRecent(maxOrchRunLimit); err == nil {
+		for _, rr := range recent {
+			if rr.ID == id {
+				run = rr
+				break
+			}
+		}
+	}
+	if s.canReadRun(r, run) {
+		return true
+	}
+	s.deny(w, r, http.StatusForbidden, authz.RunsRead, authz.ReasonOutOfBoundary, principalID(r))
+	return false
 }
 
 func parseBoundedLimit(raw string, defaultLimit, maxLimit int) int {

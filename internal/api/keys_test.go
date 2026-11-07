@@ -25,7 +25,7 @@ func newAuthedServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 	return s, adminSecret
 }
 
@@ -113,7 +113,7 @@ func TestAPI_CreateKeyForbiddenForNonAdmin(t *testing.T) {
 	keys := auth.NewAPIKeyStore()
 	rbac := auth.NewRBAC()
 	_, viewerSecret, _ := keys.Issue("v", "default", []auth.Role{auth.RoleViewer}, "viewer", 0)
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/keys", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("X-API-Key", viewerSecret)

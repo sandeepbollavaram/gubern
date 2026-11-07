@@ -98,6 +98,7 @@ func userFromAPIKey(keys *APIKeyStore, secret string) (User, bool) {
 		ID:    key.UserID,
 		OrgID: key.OrgID,
 		Roles: key.Roles,
+		KeyID: key.ID,
 	}, true
 }
 

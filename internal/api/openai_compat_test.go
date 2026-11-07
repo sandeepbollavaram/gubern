@@ -422,7 +422,7 @@ func TestOpenAIEndpoints_AuthBearerAndMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 	s.SetOpenAIGateway(func() []string { return []string{"m"} },
 		(&recordingCompleter{reply: "ok"}).complete, nil)
 

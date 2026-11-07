@@ -76,11 +76,11 @@ func logsServer(t *testing.T, populate bool) (*Server, string) {
 	s := New("127.0.0.1:0", holder, "test", discardLogger())
 	keys := auth.NewAPIKeyStore()
 	rbac := auth.NewRBAC()
-	_, secret, err := keys.Issue("u", "default", []auth.Role{auth.RoleOperator}, "tok", 0)
+	_, secret, err := keys.Issue("u", "default", []auth.Role{auth.RoleAdmin}, "tok", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetAuth(auth.NewAuthMiddleware(keys, nil, rbac), keys, rbac)
+	wireTestAuth(t, s, keys, rbac)
 
 	buf := NewLogBuffer(100)
 	if populate {

@@ -9,14 +9,25 @@ Machine-readable sketch: [openapi.yaml](openapi.yaml).
 ## Authentication
 
 Protected endpoints require an API key, sent as `Authorization: Bearer <key>`
-or `X-API-Key: <key>`. Issue keys with `POST /api/keys` (admin) or `gubern
-setup`.
+or `X-API-Key: <key>`. Issue keys with `POST /api/keys` or `gubern setup`.
+
+Each key authenticates as a principal, and every route requires one scope
+(the full route → scope matrix is in `docs/design/identity-authorization.md`
+§7). Errors:
+
+- `401 {"error":"authentication required","reason":...}`: no key, an
+  invalid or revoked key, or a key bound to no principal.
+- `403 {"error":"forbidden","reason":...}`: `missing-scope`,
+  `out-of-boundary` (someone else's session, job or report), `not-a-person`
+  (only people decide approvals) or `inactive`.
+- `503 {"error":"authorization unavailable"}`: the identity store is not
+  available; nothing is allowed.
 
 - **Public** (no auth): `/health`, `/ready`, `/dashboard/`.
-- **Control plane** (`/internal/*`, `/metrics`, `/api/status`, …): allowed from
-  loopback without a key by default; set `GUBERN_TRUST_LOOPBACK=false` to
-  require a key even from loopback (recommended behind a same-host proxy).
-- **Data plane** (`/api/agents/*`, `/api/forge/*`, …): always require a key.
+- **Loopback** without a key: only `/internal/*`, `/metrics`, `/api/status`,
+  `/api/plugins`, `/api/secrets/status` and `/api/audit*`; set
+  `GUBERN_TRUST_LOOPBACK=false` to require a key there too.
+- Everything else always requires a key.
 
 Rate limits apply per source IP, per API key (1000 req/min default; admin keys
 unlimited), and globally (10000 req/min), plus per-IP burst auto-banning.
@@ -108,14 +119,20 @@ GET  /api/forge/status/{id} → build job status
 GET  /api/forge/jobs        → list jobs   (503 if no AI provider configured)
 ```
 
-## API keys (admin)
+## API keys (`identity:manage`)
 
 ```
 GET    /api/keys                 → list keys for ?org= (hashes never exposed)
 POST   /api/keys                 → issue: {user_id, org_id, roles, ttl_seconds, rate_limit_rpm}
-                                   → {id, secret, …}  (secret shown once)
-DELETE /api/keys/{id}            → revoke
+                                   → {id, secret, principal_id, …}  (secret shown once)
+DELETE /api/keys/{id}            → revoke (and unbind)
 ```
+
+A new key gets its own **service principal** with the grants of `roles`
+(`admin`, `operator`, `viewer`, `readonly`); the caller must already hold
+every one of those grants (403 otherwise). Service principals never decide
+approvals. People get keys with `gubern identity add-person` on the server
+machine.
 
 Keys are bcrypt-hashed (SHA-256 prehash), persisted atomically on issue/revoke.
 

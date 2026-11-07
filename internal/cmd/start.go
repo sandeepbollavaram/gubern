@@ -629,6 +629,16 @@ func runStart(ctx context.Context, pidfile string) error {
 	// authenticate: import the setup-written tui-key, else auto-create one and
 	// persist its raw secret to tui-key for the TUI to read back.
 	ensureAPIKey(keyStore, log)
+	// Identity (milestone A): every key authenticates as a principal whose
+	// grants decide what it may do. Without the store every protected route
+	// would be denied, so a failure to open it stops the start.
+	idStore, err := openIdentityStore(keyStore, keyStorePath, auditLog, log)
+	if err != nil {
+		display.StepFail("Identity", err.Error())
+		return fmt.Errorf("initialising identity store: %w", err)
+	}
+	apiSrv.SetIdentity(idStore)
+	mgr.OnShutdown("identity", func(context.Context) error { return idStore.Close() })
 	display.Step("Authentication", fmt.Sprintf("enabled, %d key(s)", keyStore.Count()))
 	mgr.OnShutdown("apikeys", func(context.Context) error {
 		if err := keyStore.Save(keyStorePath); err != nil {
