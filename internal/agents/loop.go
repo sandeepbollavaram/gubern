@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 	"github.com/sandeepbollavaram/vortex/internal/llm"
 )
 
@@ -295,6 +296,7 @@ func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec,
 		if p, _ := args["path"].(string); p != "" {
 			if ref, ok := cfg.SkillFiles[SkillKey(p)]; ok {
 				emit("📘 Using skill: " + ref.Name)
+				agentevents.Emit(ctx, agentevents.Event{Type: agentevents.SkillActivated, SessionID: cfg.Session, Tool: call.Name, Label: ref.Name, SkillHash: ref.Hash})
 				loopAudit(ctx, cfg, "agent.skill.read", call.Name, map[string]any{"skill": ref.Name, "sha256": ref.Hash})
 			}
 		}

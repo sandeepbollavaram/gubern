@@ -30,6 +30,9 @@ const (
 	// Run lifecycle (milestone D event log).
 	RunStarted  Type = "run_started"
 	RunFinished Type = "run_finished"
+	// SkillActivated: the agent read a catalogued skill (Phase 2). Label
+	// is the skill name; SkillHash pins which SKILL.md it read.
+	SkillActivated Type = "skill_activated"
 )
 
 // MaxOutput caps a tool_end output excerpt so one event stays small; the full
@@ -72,6 +75,7 @@ type Event struct {
 	DecidedVia string   `json:"decided_via,omitempty"`
 	DecidedBy  string   `json:"decided_by,omitempty"`
 	Text       string   `json:"text,omitempty"`
+	SkillHash  string   `json:"skill_hash,omitempty"`
 	At         int64    `json:"at"` // unix milliseconds
 }
 

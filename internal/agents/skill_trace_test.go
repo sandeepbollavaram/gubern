@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 	"github.com/sandeepbollavaram/vortex/internal/llm"
 )
 
@@ -33,7 +34,9 @@ func TestAgentCommand_SkillReadIsAudited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reply, err := c.HandleMessage(context.Background(), "/agent write release notes", "sk1")
+	var events []agentevents.Event
+	ctx := agentevents.WithSink(context.Background(), func(e agentevents.Event) { events = append(events, e) })
+	reply, err := c.HandleMessage(ctx, "/agent write release notes", "sk1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +56,16 @@ func TestAgentCommand_SkillReadIsAudited(t *testing.T) {
 	}
 	if skillEntries[0]["skill"] != "release-notes" || len(skillEntries[0]["sha256"].(string)) != 64 {
 		t.Errorf("detail = %v", skillEntries[0])
+	}
+	// The run's event stream says so too, for the dashboard and the app.
+	var activated []agentevents.Event
+	for _, e := range events {
+		if e.Type == agentevents.SkillActivated {
+			activated = append(activated, e)
+		}
+	}
+	if len(activated) != 1 || activated[0].Label != "release-notes" || len(activated[0].SkillHash) != 64 || activated[0].SessionID != "sk1" {
+		t.Errorf("skill_activated events = %+v", activated)
 	}
 }
 
