@@ -62,6 +62,10 @@ type Server struct {
 	// unrecorded structured stream. sseHeartbeat paces stream heartbeats.
 	events       *eventlog.Log
 	sseHeartbeat time.Duration
+	// pairLimiter rate-limits pairing redemption per address; deviceSeen
+	// throttles last-seen writes (milestone F).
+	pairLimiter *security.HTTPRateLimiter
+	deviceSeen  sync.Map
 	// approvalStore reads the persistent approval service (milestone B).
 	approvalStore ApprovalStore
 	// identity maps credentials to principals and holds grants and
@@ -400,6 +404,9 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 		// control-plane auth (production audit M1).
 		trustLoopback: loopbackTrustEnabled(),
 		sseHeartbeat:  sseHeartbeatInterval(),
+		pairLimiter: security.NewHTTPRateLimiter(security.HTTPRateLimiterConfig{
+			RPM: 10, Burst: 5, Enabled: true,
+		}),
 	}
 	mux := http.NewServeMux()
 	// Public endpoints — liveness/readiness must never require auth.
@@ -455,6 +462,15 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "GET /api/agents/pending", http.HandlerFunc(s.handleAgentPending))
 	s.route(mux, "GET /api/attention", http.HandlerFunc(s.handleAttention))
 	s.route(mux, "GET /api/me", http.HandlerFunc(s.handleMe))
+	s.route(mux, "POST /api/pairing", http.HandlerFunc(s.handlePairingCreate))
+	s.route(mux, "GET /api/devices", http.HandlerFunc(s.handleDevicesList))
+	s.route(mux, "DELETE /api/devices/{id}", http.HandlerFunc(s.handleDeviceRevoke))
+	s.route(mux, "POST /api/devices/{id}/rotate", http.HandlerFunc(s.handleDeviceRotate))
+	s.route(mux, "GET /api/links", http.HandlerFunc(s.handleLinksList))
+	s.route(mux, "DELETE /api/links/{provider}/{subject}", http.HandlerFunc(s.handleLinkRevoke))
+	// Redeeming a pairing code is the one unauthenticated write: the code is
+	// the credential. It is rate limited per address.
+	mux.HandleFunc("POST /api/pairing/redeem", s.handlePairingRedeem)
 	s.route(mux, "GET /api/runs", http.HandlerFunc(s.handleRunsList))
 	s.route(mux, "GET /api/runs/{id}", http.HandlerFunc(s.handleRunGet))
 	s.route(mux, "GET /api/runs/{id}/events", http.HandlerFunc(s.handleRunEvents))

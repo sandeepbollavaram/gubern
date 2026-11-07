@@ -237,6 +237,14 @@ service principal.
 | GET | `/api/agents/comms/stream` | `sessions:read` | cross-session feed: needs `*` | any | any key |
 | GET | `/api/agents/team/{id}/messages` | `sessions:read` | cross-session feed: needs `*` | any | any key |
 | POST | `/api/agents/{id}/chat` | `agents:run` | session in body | any | any key |
+| POST | `/api/pairing` | `devices:manage` | the target person (own, or another with `identity:manage`) | person | new in F |
+| POST | `/api/pairing/redeem` | none: the code is the credential (rate limited) | — | — | new in F |
+| GET | `/api/devices` | `devices:read` | filtered by owner | any | new in F |
+| DELETE | `/api/devices/{id}` | `devices:manage` | the device's person | any | new in F |
+| POST | `/api/devices/{id}/rotate` | `devices:manage` | the device's person | any | new in F |
+| GET | `/api/links` | `devices:read` | filtered by owner | any | new in F |
+| DELETE | `/api/links/{provider}/{subject}` | `devices:manage` | the linked person | any | new in F |
+| GET | `/api/me` | authentication only | — | any | new in D/E |
 | GET | `/api/runs` | `sessions:read` | filtered by session | any | new in D |
 | GET | `/api/runs/{id}` | `sessions:read` | the run's session | any | new in D |
 | GET | `/api/runs/{id}/events` | `sessions:read` | the run's session | any | new in D |

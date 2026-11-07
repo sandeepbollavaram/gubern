@@ -15,6 +15,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -115,6 +116,26 @@ type TelegramBot struct {
 
 	clarifyMu sync.Mutex
 	clarify   map[string]*clarifySession // session → in-progress Q&A
+
+	// ident links accounts to people (pairing) and refuses revoked ones.
+	ident    ChannelIdentity
+	pairings pairLimiter
+}
+
+// SetIdentity connects the bot to the identity store (milestone F).
+func (t *TelegramBot) SetIdentity(ci ChannelIdentity) { t.ident = ci }
+
+// tryPair handles "/pair <code>" sent in a private chat, from anyone: the
+// code is the credential. It reports whether the message was a pairing.
+func (t *TelegramBot) tryPair(ctx context.Context, m *telegramMessage) (string, bool) {
+	if m == nil || m.From == nil || m.Chat.ID != m.From.ID {
+		return "", false
+	}
+	code, ok := pairCommand(m.Text)
+	if !ok {
+		return "", false
+	}
+	return handlePair(ctx, t.ident, &t.pairings, "telegram", strconv.FormatInt(m.From.ID, 10), code), true
 }
 
 // SetMentionHandler wires an "@agent" direct-chat router (the team bridge). The
@@ -165,12 +186,17 @@ func NewTelegramBot(cfg TelegramConfig) (*TelegramBot, error) {
 
 // allowed reports whether chatID is permitted to interact with the bot.
 func (t *TelegramBot) allowed(chatID int64) bool {
+	subject := strconv.FormatInt(chatID, 10)
+	// Revocation wins over the allow-list (design: identity-authorization §8).
+	if t.ident.revoked("telegram", subject) {
+		return false
+	}
 	for _, id := range t.cfg.AllowedIDs {
 		if id == chatID {
 			return true
 		}
 	}
-	return false
+	return t.ident.linked("telegram", subject)
 }
 
 // post issues a POST to the given Telegram method with a JSON body.
@@ -368,6 +394,10 @@ func (t *TelegramBot) processUpdate(ctx context.Context, runtime *agents.Runtime
 	if upd.Message == nil {
 		return
 	}
+	if reply, ok := t.tryPair(ctx, upd.Message); ok {
+		_ = t.SendMessage(ctx, upd.Message.Chat.ID, reply)
+		return
+	}
 	if !t.allowedMessage(upd.Message) {
 		return
 	}
@@ -483,6 +513,11 @@ func (t *TelegramBot) HandleWebhook(runtime *agents.Runtime) http.Handler {
 			w.WriteHeader(http.StatusOK)
 		case upd.Message != nil:
 			chatID := upd.Message.Chat.ID
+			if reply, ok := t.tryPair(context.WithoutCancel(r.Context()), upd.Message); ok {
+				_ = t.SendMessage(context.WithoutCancel(r.Context()), chatID, reply)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			if !t.allowedMessage(upd.Message) {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return

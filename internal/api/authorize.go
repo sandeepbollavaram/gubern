@@ -81,18 +81,24 @@ var routeScopes = map[string]authz.Scope{
 	"GET /api/agents/team/{id}/messages": authz.SessionsRead,
 	"POST /api/agents/{id}/chat":         authz.AgentsRun,
 
-	"GET /api/runs":                      authz.SessionsRead,
-	"GET /api/runs/{id}":                 authz.SessionsRead,
-	"GET /api/runs/{id}/events":          authz.SessionsRead,
-	"POST /api/runs/{id}/cancel":         authz.AgentsRun,
-	"GET /api/activity":                  authz.SessionsRead,
-	"GET /api/approvals":                 authz.ApprovalsRead,
-	"GET /api/approvals/{id}":            authz.ApprovalsRead,
-	"POST /api/approvals/{id}/decision":  authz.ApprovalsDecide,
-	"GET /api/checkpoints":               authz.ApprovalsRead,
-	"POST /api/checkpoints/{id}/approve": authz.ApprovalsDecide,
-	"POST /api/checkpoints/{id}/reject":  authz.ApprovalsDecide,
-	"POST /api/checkpoints/{id}/edit":    authz.ApprovalsDecide,
+	"POST /api/pairing":                      authz.DevicesManage,
+	"GET /api/devices":                       authz.DevicesRead,
+	"DELETE /api/devices/{id}":               authz.DevicesManage,
+	"POST /api/devices/{id}/rotate":          authz.DevicesManage,
+	"GET /api/links":                         authz.DevicesRead,
+	"DELETE /api/links/{provider}/{subject}": authz.DevicesManage,
+	"GET /api/runs":                          authz.SessionsRead,
+	"GET /api/runs/{id}":                     authz.SessionsRead,
+	"GET /api/runs/{id}/events":              authz.SessionsRead,
+	"POST /api/runs/{id}/cancel":             authz.AgentsRun,
+	"GET /api/activity":                      authz.SessionsRead,
+	"GET /api/approvals":                     authz.ApprovalsRead,
+	"GET /api/approvals/{id}":                authz.ApprovalsRead,
+	"POST /api/approvals/{id}/decision":      authz.ApprovalsDecide,
+	"GET /api/checkpoints":                   authz.ApprovalsRead,
+	"POST /api/checkpoints/{id}/approve":     authz.ApprovalsDecide,
+	"POST /api/checkpoints/{id}/reject":      authz.ApprovalsDecide,
+	"POST /api/checkpoints/{id}/edit":        authz.ApprovalsDecide,
 
 	"POST /api/forge/build":      authz.RunsWrite,
 	"GET /api/forge/status/{id}": authz.RunsRead,
@@ -220,7 +226,7 @@ func (s *Server) resolveSubject(r *http.Request) (*authz.Subject, int, string) {
 	if user.KeyID == "" {
 		return nil, http.StatusUnauthorized, "unbound-credential"
 	}
-	p, err := s.identity.CredentialPrincipal(user.KeyID)
+	ci, err := s.identity.Credential(user.KeyID)
 	if errors.Is(err, identity.ErrNotFound) {
 		return nil, http.StatusUnauthorized, "unbound-credential"
 	}
@@ -228,14 +234,23 @@ func (s *Server) resolveSubject(r *http.Request) (*authz.Subject, int, string) {
 		s.log.Error("resolving principal failed", "key_id", user.KeyID, "err", err)
 		return nil, http.StatusServiceUnavailable, "identity-unavailable"
 	}
-	sub, err := s.identity.Subject(p.ID)
+	if ci.DeviceID != "" {
+		// A paired device's credential stops with the device.
+		d, derr := s.identity.Device(ci.DeviceID)
+		if derr != nil || d.RevokedAt != nil {
+			return nil, http.StatusUnauthorized, "device-revoked"
+		}
+		s.touchDevice(ci.DeviceID)
+	}
+	sub, err := s.identity.Subject(ci.PrincipalID)
 	if err != nil {
-		s.log.Error("loading grants failed", "principal", p.ID, "err", err)
+		s.log.Error("loading grants failed", "principal", ci.PrincipalID, "err", err)
 		return nil, http.StatusServiceUnavailable, "identity-unavailable"
 	}
 	if !sub.Active {
 		return nil, http.StatusForbidden, authz.ReasonInactive
 	}
+	identity.ApplyCeiling(sub, ci.Ceiling)
 	return sub, 0, ""
 }
 

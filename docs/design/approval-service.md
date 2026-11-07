@@ -71,7 +71,7 @@ A's scopes:
 | API, dashboard, mobile app, TUI | The authenticated principal must be a **person** holding `approvals:decide` on the approval's session: its own session, or `*`. Service principals never qualify. |
 | Channel user **linked** to a principal (pairing, milestone F) | The same rule, applied to the linked principal. The decision is recorded under that principal. |
 | Channel user whose link was **revoked** | Refused. |
-| Channel user **not linked** yet | Accepted if the channel's own allow-list admitted them (Telegram allowed ids, WhatsApp allowed numbers, Slack operator users). `GUBERN_REQUIRE_LINKED_APPROVERS=true` refuses them. Milestone F's gate makes linked approvers the default. |
+| Channel user **not linked** yet | Accepted if the channel's own allow-list admitted them (Telegram allowed ids, WhatsApp allowed numbers, Slack operator users). `GUBERN_REQUIRE_LINKED_APPROVERS=true` refuses them. Pairing (milestone F) now creates links. Requiring linked approvers stays opt-in, so existing allow-list setups keep working on upgrade; see `pairing.md` §5. |
 | Anything else, including the legacy session-only call without a decider | Refused. A service with no authorizer configured refuses every decision. |
 
 ## 5. Channels

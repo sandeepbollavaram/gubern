@@ -62,7 +62,13 @@ type WhatsAppBot struct {
 	client   *http.Client
 	// approvals, when set, decides approval buttons and /approve commands.
 	approvals *ChannelApprovals
+	// ident links numbers to people (pairing) and refuses revoked ones.
+	ident    ChannelIdentity
+	pairings pairLimiter
 }
+
+// SetIdentity connects the bot to the identity store (milestone F).
+func (wb *WhatsAppBot) SetIdentity(ci ChannelIdentity) { wb.ident = ci }
 
 // NewWhatsAppBot constructs the bot. It requires PhoneNumberID and AccessToken.
 func NewWhatsAppBot(cfg WhatsAppConfig) (*WhatsAppBot, error) {
@@ -277,6 +283,13 @@ func (wb *WhatsAppBot) senderAllowed(from string) bool {
 	if from == "" {
 		return false
 	}
+	// Revocation wins over the allow-list; a paired number is let in.
+	if wb.ident.revoked("whatsapp", from) {
+		return false
+	}
+	if wb.ident.linked("whatsapp", from) {
+		return true
+	}
 	for _, n := range wb.cfg.AllowedNumbers {
 		if NormalizeWhatsAppNumber(n) == from {
 			return true
@@ -328,10 +341,18 @@ func (wb *WhatsAppBot) approvalCommand(ctx context.Context, from, text string) (
 }
 
 func (wb *WhatsAppBot) dispatch(ctx context.Context, runtime *agents.Runtime, from, text string) {
-	if runtime == nil || text == "" || from == "" {
+	if text == "" || from == "" {
 		return
 	}
-	if !wb.senderAllowed(from) {
+	// "/pair <code>" works from any number: the code is the credential.
+	if code, ok := pairCommand(text); ok {
+		n := NormalizeWhatsAppNumber(from)
+		if n != "" {
+			_ = wb.SendText(ctx, from, handlePair(ctx, wb.ident, &wb.pairings, "whatsapp", n, code))
+		}
+		return
+	}
+	if runtime == nil || !wb.senderAllowed(from) {
 		return
 	}
 	if reply, ok := wb.approvalCommand(ctx, from, text); ok {

@@ -926,6 +926,16 @@ func runStart(ctx context.Context, pidfile string) error {
 	msg := buildMessaging(log)
 	// Every human approval, including DevOps, goes through the service.
 	msg.approvalFn = brokerApprovalFunc(approvalSvc, "devops")
+	// Paired channel accounts (milestone F): linked ones are let in, revoked
+	// ones refused, and /pair links an account to a person.
+	if ci := channelIdentity(idStore); msg.telegram != nil || msg.whatsapp != nil {
+		if msg.telegram != nil {
+			msg.telegram.SetIdentity(ci)
+		}
+		if msg.whatsapp != nil {
+			msg.whatsapp.SetIdentity(ci)
+		}
+	}
 	if msg.gateway != nil {
 		display.Step("AI gateway", "provider="+strings.Join(msg.gateway.ProviderNames(), ","))
 	} else {

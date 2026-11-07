@@ -114,7 +114,7 @@ func TestEveryProtectedRouteHasARule(t *testing.T) {
 	// of the public or self-verifying endpoints.
 	public := map[string]bool{
 		"GET /health": true, "GET /ready": true, "GET /dashboard/": true,
-		"/webhook/": true, "/studio/": true, "/a2a/": true,
+		"/webhook/": true, "/studio/": true, "/a2a/": true, "POST /api/pairing/redeem": true,
 	}
 	files, _ := filepath.Glob("*.go")
 	fset := token.NewFileSet()

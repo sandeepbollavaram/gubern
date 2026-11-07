@@ -183,6 +183,26 @@ CREATE TABLE identity_audit (
 	detail TEXT NOT NULL DEFAULT ''
 );
 `,
+	// 2: pairing (milestone F). A credential can belong to a device and carry
+	// a scope ceiling; pairing codes are stored only as hashes.
+	`
+ALTER TABLE credentials ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE credentials ADD COLUMN scope_ceiling TEXT NOT NULL DEFAULT '';
+CREATE TABLE pairing_codes (
+	id           TEXT PRIMARY KEY,
+	code_hash    TEXT NOT NULL UNIQUE,
+	purpose      TEXT NOT NULL CHECK (purpose IN ('device','telegram','whatsapp','discord')),
+	principal_id TEXT NOT NULL REFERENCES principals(id),
+	scopes       TEXT NOT NULL DEFAULT '',
+	label        TEXT NOT NULL DEFAULT '',
+	created_by   TEXT NOT NULL,
+	created_at   INTEGER NOT NULL,
+	expires_at   INTEGER NOT NULL,
+	used_at      INTEGER,
+	used_by      TEXT NOT NULL DEFAULT '',
+	failures     INTEGER NOT NULL DEFAULT 0
+);
+`,
 }
 
 // SchemaVersion is the schema version this binary writes.

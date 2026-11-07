@@ -229,10 +229,10 @@ func Template(role string, kind Kind) []Grant {
 	case "operator":
 		// Everything a viewer reads, plus running work on its own sessions.
 		add(AnyResource, SystemRead, AuditRead, SecurityRead, AgentsRead, RunsWrite, DevopsRead, DevopsRun, ModelsUse, NotifySend)
-		add(OwnResource, AgentsRun, SessionsRead, ApprovalsRead, ApprovalsDecide, RunsRead)
+		add(OwnResource, AgentsRun, SessionsRead, ApprovalsRead, ApprovalsDecide, RunsRead, DevicesRead, DevicesManage)
 	case "viewer":
 		add(AnyResource, SystemRead, AuditRead, SecurityRead, AgentsRead, DevopsRead)
-		add(OwnResource, SessionsRead, ApprovalsRead, RunsRead)
+		add(OwnResource, SessionsRead, ApprovalsRead, RunsRead, DevicesRead)
 	case "readonly":
 		add(AnyResource, SystemRead)
 	default:
