@@ -13,9 +13,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	agentskills "github.com/sandeepbollavaram/vortex/internal/skills"
+
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 )
 
 // AIGateway is the interface the coordinator uses to reach a language model. It
@@ -179,9 +182,10 @@ type pendingApproval struct {
 	tool        Tool
 	params      map[string]any
 	result      chan bool
-	description string    // what was shown for approval, for the audit record
-	actionID    string    // ActionID of the request; approve calls may be bound to it
-	created     time.Time // pending approvals expire after approvalTTL
+	description string              // what was shown for approval, for the audit record
+	actionID    string              // ActionID of the request; approve calls may be bound to it
+	created     time.Time           // pending approvals expire after approvalTTL
+	info        agentevents.Pending // what clients show for this pending action
 }
 
 // approvalTTL bounds how long a pending action stays approvable. Without it a
@@ -777,7 +781,25 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	if _, ok := params["session_id"]; !ok {
 		params["session_id"] = session
 	}
-	emit(toolStartLine(name, params))
+	// Every text line this function emits describes the step (start, result,
+	// error, approval request, preview, rejection). With an event sink
+	// (dashboard/app) the structured events below carry all of that, so the
+	// lines are not repeated in the text stream. Without one (TUI, Telegram,
+	// scripts) nothing changes.
+	if agentevents.SinkFrom(ctx) != nil {
+		emit = func(string) {}
+	}
+	startLine := toolStartLine(name, params)
+	emit(startLine)
+	stepID := newStepID()
+	started := time.Now()
+	agentevents.Emit(ctx, agentevents.Event{Type: agentevents.ToolStart, SessionID: session, StepID: stepID, Tool: name, Label: startLine})
+	stepEnd := func(status, output string) {
+		agentevents.Emit(ctx, agentevents.Event{
+			Type: agentevents.ToolEnd, SessionID: session, StepID: stepID, Tool: name, Label: startLine,
+			Status: status, Output: output, DurationMs: time.Since(started).Milliseconds(),
+		})
+	}
 
 	result, err := tool.Execute(ctx, params)
 
@@ -785,9 +807,12 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	if !errors.As(err, &ae) {
 		if err != nil {
 			emit("⚠ " + err.Error())
+			stepEnd("failed", err.Error())
 			return nil, err
 		}
-		emit(toolDoneLine(name, result))
+		done := toolDoneLine(name, result)
+		emit(done)
+		stepEnd("ok", done)
 		return result, nil
 	}
 
@@ -800,6 +825,8 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	// Encode the risk level + tool so the TUI can render a risk badge and the
 	// matching header severity (brand redesign part 6).
 	actionID := ActionID(ae.Request)
+	now := time.Now()
+	info := pendingInfo(session, actionID, ae.Request, c.cfg.WorkingDir, now)
 	if c.cfg.Approval == nil {
 		// Async (TUI/API) path: stash the action BEFORE showing it, so an
 		// approve call can't arrive while nothing is pending yet.
@@ -809,10 +836,13 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 			result:      make(chan bool, 1),
 			description: ae.Request.Description,
 			actionID:    actionID,
-			created:     time.Now(),
+			created:     now,
+			info:        info,
 		}
 		c.mu.Unlock()
 	}
+	stepEnd("waiting", "")
+	agentevents.Emit(ctx, agentevents.Event{Type: agentevents.ApprovalRequired, SessionID: session, Tool: name, Approval: &info})
 	emit(approvalLine(ae.Request, actionID))
 	if ae.Request.Preview != "" {
 		emit(ae.Request.Preview)
@@ -825,6 +855,11 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 		approved := c.cfg.Approval(ctx, ae.Request)
 		c.auditAction(ctx, "agent.approval.decided", session, name, map[string]any{
 			"approved": approved, "via": "approver", "action": truncateForAudit(ae.Request.Description),
+		})
+		agentevents.Emit(ctx, agentevents.Event{
+			Type: agentevents.ApprovalDecided, SessionID: session, Tool: name,
+			Status: map[bool]string{true: "approved", false: "rejected"}[approved], DecidedVia: "approver",
+			Approval: &info,
 		})
 		if !approved {
 			emit("✗ Action rejected by user")
@@ -843,6 +878,53 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	// Async (TUI) path: the action was stashed above; return the preview now.
 	return nil, nil
 }
+
+// pendingInfo describes a pending action for clients (dashboard, app).
+func pendingInfo(session, actionID string, req ApprovalRequest, workspace string, created time.Time) agentevents.Pending {
+	cmd := req.Command
+	if cmd != "" && len(req.Args) > 0 {
+		cmd += " " + strings.Join(req.Args, " ")
+	}
+	tool := req.Tool
+	if tool == "" && req.Command != "" {
+		tool = "run_command"
+	}
+	return agentevents.Pending{
+		SessionID:   session,
+		ActionID:    actionID,
+		Tool:        tool,
+		Risk:        req.Risk(),
+		Description: req.Description,
+		Command:     cmd,
+		Preview:     agentevents.Truncate(req.Preview, agentevents.MaxOutput),
+		Workspace:   workspace,
+		CreatedAt:   created,
+		ExpiresAt:   created.Add(approvalTTL),
+	}
+}
+
+// PendingApprovals lists actions waiting for a decision across sessions,
+// oldest first. Expired entries are skipped (they can no longer be
+// approved).
+func (c *Coordinator) PendingApprovals() []agentevents.Pending {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]agentevents.Pending, 0, len(c.pending))
+	now := time.Now()
+	for _, p := range c.pending {
+		if now.Sub(p.created) > approvalTTL || p.info.ActionID == "" {
+			continue
+		}
+		out = append(out, p.info)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out
+}
+
+var stepSeq atomic.Uint64
+
+// newStepID returns a process-unique id pairing a tool_start with its tool_end.
+func newStepID() string { return fmt.Sprintf("st-%d", stepSeq.Add(1)) }
 
 // ActionID is a short digest of exactly what an approval request would do
 // (tool, parameters, description). It is shown with the request, and an

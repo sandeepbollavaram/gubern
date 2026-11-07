@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 	"github.com/sandeepbollavaram/vortex/pkg/pidfile"
 
 	"github.com/spf13/cobra"
@@ -1960,6 +1961,11 @@ func (a *agentRuntimeAdapter) Approve(sessionID string, approved bool) (string, 
 
 func (a *agentRuntimeAdapter) ApproveAction(sessionID, actionID string, approved bool) (string, bool, error) {
 	return a.rt.ApproveAction(sessionID, actionID, approved)
+}
+
+// PendingApprovals lists actions waiting for a decision (GET /api/agents/pending).
+func (a *agentRuntimeAdapter) PendingApprovals() []agentevents.Pending {
+	return a.rt.PendingApprovals()
 }
 
 func (a *agentRuntimeAdapter) ListSessions() []api.SessionSummary {

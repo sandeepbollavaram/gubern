@@ -8,6 +8,9 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 )
 
 // ErrTooManyRequests is returned by Submit when the concurrency cap is reached.
@@ -143,6 +146,9 @@ func (r *Runtime) Submit(ctx context.Context, userMsg, sessionID string) (<-chan
 		// unwinds if EITHER the caller cancels or Stop cancels the runtime.
 		mctx, cancel := context.WithCancel(r.ctx)
 		defer cancel()
+		// mctx derives from the runtime's context, so carry the caller's
+		// event sink (dashboard/app SSE) across explicitly.
+		mctx = agentevents.WithSink(mctx, agentevents.SinkFrom(ctx))
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -155,7 +161,13 @@ func (r *Runtime) Submit(ctx context.Context, userMsg, sessionID string) (<-chan
 		// (AGUI item C). The select drops output once the caller is gone, so
 		// an abandoned channel can never block this goroutine (the SSE handler
 		// stops draining when the client disconnects).
+		sink := agentevents.SinkFrom(mctx)
 		send := func(chunk string) {
+			// Events clients get text on the same ordered channel as tool
+			// and approval events.
+			if sink != nil {
+				sink(agentevents.Event{Type: agentevents.Text, SessionID: sessionID, Text: chunk, At: time.Now().UnixMilli()})
+			}
 			select {
 			case out <- chunk:
 			case <-mctx.Done():
@@ -234,6 +246,11 @@ func (r *Runtime) Approve(sessionID string, approved bool) (string, bool) {
 // ApproveAction is Approve bound to one action id (see Coordinator.ApproveActionID).
 func (r *Runtime) ApproveAction(sessionID, actionID string, approved bool) (string, bool, error) {
 	return r.cfg.Coordinator.ApproveActionID(sessionID, actionID, approved)
+}
+
+// PendingApprovals lists actions waiting for a human decision.
+func (r *Runtime) PendingApprovals() []agentevents.Pending {
+	return r.cfg.Coordinator.PendingApprovals()
 }
 
 // Coordinator returns the runtime's coordinator (for wiring local-tool calls).

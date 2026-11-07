@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 	"github.com/sandeepbollavaram/vortex/internal/security"
 )
 
@@ -127,7 +128,23 @@ func (s *Server) handleAgentSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch, err := s.agentRuntime.Submit(r.Context(), req.Message, req.SessionID)
+	// ?events=1 with Accept: text/event-stream asks for the structured event
+	// stream (dashboard, mobile app): text, tool steps and approvals on one
+	// ordered channel. Without it the classic chunk stream is unchanged.
+	ctx := r.Context()
+	var evCh chan agentevents.Event
+	if wantsSSE(r) && r.URL.Query().Get("events") == "1" {
+		evCh = make(chan agentevents.Event, 256)
+		done := r.Context().Done()
+		ctx = agentevents.WithSink(ctx, func(ev agentevents.Event) {
+			select {
+			case evCh <- ev:
+			case <-done:
+			}
+		})
+	}
+
+	ch, err := s.agentRuntime.Submit(ctx, req.Message, req.SessionID)
 	if err != nil {
 		// Concurrency cap reached → 503 (retryable); other errors → 500.
 		if errors.Is(err, ErrAgentBusy) {
@@ -138,6 +155,10 @@ func (s *Server) handleAgentSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if evCh != nil {
+		s.streamAgentEvents(w, r, ch, evCh)
+		return
+	}
 	if wantsSSE(r) {
 		s.streamAgentSSE(w, r, ch)
 		return
@@ -196,6 +217,76 @@ func (s *Server) streamAgentSSE(w http.ResponseWriter, r *http.Request, ch <-cha
 			flusher.Flush()
 		}
 	}
+}
+
+// streamAgentEvents writes the structured event stream: one SSE event per
+// agentevents.Event ("event: <type>"), then "event: done". The runtime's text
+// channel is drained only to learn when the run ends: in events mode text is
+// delivered as "text" events, in order with the tool and approval events.
+func (s *Server) streamAgentEvents(w http.ResponseWriter, r *http.Request, ch <-chan string, evCh <-chan agentevents.Event) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	write := func(ev agentevents.Event) {
+		data, err := json.Marshal(ev)
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data)
+		flusher.Flush()
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-evCh:
+			write(ev)
+		case _, open := <-ch:
+			if open {
+				continue
+			}
+			// Every event was handed to the sink before the runtime closed
+			// the channel, so whatever is buffered is the complete tail.
+			for {
+				select {
+				case ev := <-evCh:
+					write(ev)
+					continue
+				default:
+				}
+				break
+			}
+			fmt.Fprint(w, "event: done\ndata: {}\n\n")
+			flusher.Flush()
+			return
+		}
+	}
+}
+
+// pendingLister is implemented by runtimes that can list pending approvals.
+type pendingLister interface {
+	PendingApprovals() []agentevents.Pending
+}
+
+// handleAgentPending lists actions waiting for a human decision across
+// sessions (GET /api/agents/pending), for the dashboard Inbox and the app.
+func (s *Server) handleAgentPending(w http.ResponseWriter, _ *http.Request) {
+	pending := []agentevents.Pending{}
+	if lister, ok := s.agentRuntime.(pendingLister); ok && s.agentRuntime != nil {
+		if p := lister.PendingApprovals(); p != nil {
+			pending = p
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"pending": pending})
 }
 
 // agentApproveRequest is the POST /api/agents/approve body.
