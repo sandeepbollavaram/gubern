@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -52,5 +53,21 @@ func TestEnabled_FiltersDisabled(t *testing.T) {
 	}
 	if len(Enabled(all, nil)) != 3 {
 		t.Error("nil set should keep all")
+	}
+}
+
+func TestDiscover_UnreadableRootIsAProblem(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the test user can't read (POSIX permissions, not root)")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "skills")
+	if err := os.Mkdir(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	found, problems := Discover([]Root{{Dir: filepath.Join(dir, "missing"), Scope: "user"}, {Dir: locked, Scope: "project"}})
+	if len(found) != 0 || len(problems) != 1 || problems[0].Path != locked {
+		t.Fatalf("found=%v problems=%v; want one problem for the unreadable root", found, problems)
 	}
 }

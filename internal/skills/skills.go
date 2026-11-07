@@ -140,8 +140,14 @@ func Discover(roots []Root) ([]Skill, []Problem) {
 	var problems []Problem
 	for _, r := range roots {
 		entries, err := os.ReadDir(r.Dir)
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			continue // a missing root is normal
+		}
+		if err != nil {
+			// Unreadable (permissions, a file locked by a scanner): say so
+			// rather than silently showing no skills.
+			problems = append(problems, Problem{Path: r.Dir, Err: err})
+			continue
 		}
 		for _, e := range entries {
 			if !e.IsDir() { // DirEntry.IsDir is false for a symlink to a dir: not followed
