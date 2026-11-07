@@ -15,6 +15,10 @@ export interface Identity {
   role: Role;
   /** Signed in automatically because the browser is on the server itself. */
   local: boolean;
+  /** Scopes the principal holds (GET /api/me); absent in the mock. */
+  scopes?: string[];
+  /** "person" or "service". */
+  kind?: string;
 }
 
 export interface SystemSummary {

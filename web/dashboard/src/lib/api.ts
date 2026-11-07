@@ -1,10 +1,9 @@
 // Typed API client for the Gubern management API. All requests are relative so
 // they hit the same origin serving the dashboard (or the dev proxy on :9090).
 //
-// Agent/orchestration routes use requireAPIKey on the server. This client does
-// not yet attach X-API-Key; operators must configure the dashboard origin (or
-// dev proxy) to inject credentials, or these calls return 401 and the UI shows
-// auth-denied states.
+// Every request carries the signed-in API key (see data/auth.ts); the server
+// decides what that key's principal may read.
+import { authFetch as fetch } from "../data/auth";
 import type { HealthResponse, StatusInfo, AuditEntry } from "../types";
 
 async function getJSON<T>(path: string): Promise<T> {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Clock, ShieldQuestion, XCircle } from "lucide-react";
-import { client, useApproval } from "../../data/client";
+import { client, useApproval, useCan } from "../../data/client";
 import { useUIStore } from "../../store";
 import { Button, Countdown, RiskBadge } from "../../ui/primitives";
 import { cx, relative } from "../../ui/util";
@@ -16,6 +16,7 @@ const CONFIRM_WINDOW_MS = 6000;
 
 export function ApprovalCard({ approvalId, highlight }: { approvalId: string; highlight?: boolean }) {
   const a = useApproval(approvalId);
+  const canDecide = useCan("approvals:decide");
   const toast = useUIStore((s) => s.toast);
   const [armedAt, setArmedAt] = useState<number | null>(null);
   const [armedLeft, setArmedLeft] = useState(0);
@@ -40,6 +41,7 @@ export function ApprovalCard({ approvalId, highlight }: { approvalId: string; hi
   const strict = a.risk === "HIGH RISK" || a.risk === "CRITICAL";
 
   const decide = async (approve: boolean) => {
+    if (!canDecide) return;
     if (approve && strict) {
       const now = Date.now();
       if (armedAt === null) {
@@ -127,7 +129,12 @@ export function ApprovalCard({ approvalId, highlight }: { approvalId: string; hi
           Requested by {a.requestedBy} · Expires in <Countdown until={a.expiresAt} />. It's rejected automatically if nobody decides.
         </p>
       </div>
-      <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
+      {!canDecide && a.state === "pending" && (
+        <p className="border-t border-border px-4 py-2.5 text-[13px] text-muted">
+          You can see this request, but deciding it needs a person with permission to approve on this session.
+        </p>
+      )}
+      <div className={cx("flex items-center gap-2 border-t border-border px-4 py-2.5", !canDecide && "hidden")}>
         <Button variant="secondary" busy={busy === "reject"} disabled={!!busy} onClick={() => void decide(false)}>
           Reject <span className="ml-1 font-mono text-[11px] text-muted">R</span>
         </Button>

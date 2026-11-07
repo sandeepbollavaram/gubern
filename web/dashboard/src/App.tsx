@@ -1,9 +1,12 @@
-import { lazy, useEffect } from "react";
+import { lazy, useEffect, useSyncExternalStore } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import { Shell } from "./app/Shell";
 import { LegacyPage } from "./features/library/LegacyPage";
 import { useUIStore } from "./store";
+import { currentKey, onAuthChange } from "./data/auth";
+import { usingMock } from "./data/client";
+import { SignIn } from "./app/SignIn";
 
 // New screens (docs/design/dashboard-ux-spec.md).
 const Home = lazy(() => import("./features/home/Home").then((m) => ({ default: m.Home })));
@@ -46,9 +49,19 @@ const legacy = (title: string, body: string, el: React.ReactNode) => (
   </LegacyPage>
 );
 
+// AuthGate shows the sign-in screen until an API key is set (not in the
+// mock), and drops cached data when the person signs in or out.
+const signedIn = () => usingMock || !!currentKey();
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const ok = useSyncExternalStore(onAuthChange, signedIn, signedIn);
+  useEffect(() => onAuthChange(() => queryClient.clear()), []);
+  return ok ? <>{children}</> : <SignIn />;
+}
+
 // Served under /dashboard/ by the Gubern management API (embedded dist).
 export default function App() {
   return (
+    <AuthGate>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename="/dashboard">
         <Routes>
@@ -96,5 +109,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
+    </AuthGate>
   );
 }

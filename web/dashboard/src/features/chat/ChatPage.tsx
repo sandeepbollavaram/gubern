@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { ArrowDown, ChevronDown, Download, ListChecks, Pencil, Pin, Trash2 } from "lucide-react";
-import { client, useIsRunning, usePlan, useQuestions, useSessions, useTranscript } from "../../data/client";
+import { client, useCan, useIsRunning, usePlan, useQuestions, useSessions, useTranscript } from "../../data/client";
 import type { TranscriptItem, ViewMode } from "../../data/model";
 import { useUIStore } from "../../store";
 import { RichText } from "../../ui/RichText";
@@ -91,6 +91,7 @@ function Conversation({ id }: { id: string }) {
   const navigate = useNavigate();
   const items = useTranscript(id);
   const running = useIsRunning(id);
+  const canRun = useCan("agents:run");
   const questions = useQuestions(id);
   const plan = usePlan(id);
   const { data: sessions } = useSessions();
@@ -266,6 +267,11 @@ function Conversation({ id }: { id: string }) {
         )}
         <div className="mx-auto max-w-3xl">
           {openQuestions && !trayClosed && <QuestionTray set={openQuestions} onClose={() => setTrayClosed(true)} />}
+          {!canRun ? (
+            <p className="rounded-lg border border-border bg-surface px-4 py-3 text-center text-[13px] text-muted">
+              You can read this session. Sending needs permission to run agents.
+            </p>
+          ) : (
           <Composer
             draftKey={id}
             running={running}
@@ -274,6 +280,7 @@ function Conversation({ id }: { id: string }) {
             placeholder={openQuestions && !trayClosed ? "Or reply in your own words…" : "Reply"}
             compact={!!openQuestions && !trayClosed}
           />
+          )}
           <p className="mt-1.5 text-center text-[11px] text-muted">Gubern's agent can make mistakes. Changes outside the workspace always ask first.</p>
         </div>
       </div>

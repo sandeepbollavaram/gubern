@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, Link } from "react-router";
 import { AlertTriangle, CheckCircle2, FileText, Hammer, Route as RouteIcon, ShieldAlert, Sparkles, XCircle } from "lucide-react";
-import { client, useAttention, useIdentity, useOutputs, useSummary } from "../../data/client";
+import { client, useAttention, useCan, useIdentity, useOutputs, useSummary } from "../../data/client";
 import type { AttentionItem, Output } from "../../data/model";
 import { useUIStore } from "../../store";
 import { Composer } from "../chat/Composer";
@@ -83,6 +83,7 @@ const OUTPUT_ICON: Record<Output["type"], typeof FileText> = { report: FileText,
 
 export function Home() {
   const { data: me } = useIdentity();
+  const canRun = useCan("agents:run");
   const { data: attention } = useAttention();
   const { data: outputs, isLoading: outputsLoading } = useOutputs();
   const navigate = useNavigate();
@@ -107,7 +108,13 @@ export function Home() {
           <StatusLine />
         </div>
 
-        <Composer draftKey="new" autoFocus={focus ?? true} onSend={(t) => void start(t)} placeholder="Ask Gubern, or describe a task. Type / for commands" />
+        {canRun ? (
+          <Composer draftKey="new" autoFocus={focus ?? true} onSend={(t) => void start(t)} placeholder="Ask Gubern, or describe a task. Type / for commands" />
+        ) : (
+          <p className="rounded-lg border border-border bg-surface px-4 py-3 text-center text-[13px] text-muted">
+            Your key can read Gubern but not run agents. Ask the owner for an operator key.
+          </p>
+        )}
 
         {attention && attention.length > 0 && (
           <section className="mt-10" aria-labelledby="needs-you">

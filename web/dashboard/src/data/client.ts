@@ -1,12 +1,15 @@
-// The single data client the new screens use. Phase 1 ships the in-memory
-// mock; Phase 2 replaces this export with the HTTP/SSE client that implements
-// the same GubernClient interface.
+// The single data client the new screens use: the real HTTP/SSE client
+// (milestone E), or the in-memory mock with ?mock=1 (kept for UI work and
+// tests without a server). Both implement GubernClient.
 import { useEffect, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { mockClient } from "./mock";
+import { httpClient } from "./http";
+import { mockMode } from "./auth";
 import type { GubernClient } from "./model";
 
-export const client: GubernClient = mockClient;
+export const usingMock = mockMode();
+export const client: GubernClient = usingMock ? mockClient : httpClient;
 
 const KEY = "gubern";
 
@@ -18,6 +21,15 @@ export function useLiveInvalidation() {
 }
 
 export const useIdentity = () => useQuery({ queryKey: [KEY, "whoami"], queryFn: client.whoami, staleTime: Infinity });
+
+// useCan reports whether the signed-in principal holds scope, so screens can
+// hide actions it would be refused. The server enforces every scope anyway;
+// this only keeps the UI honest. The mock can do everything.
+export function useCan(scope: string): boolean {
+  const { data } = useIdentity();
+  if (usingMock) return true;
+  return !!data?.scopes?.includes(scope);
+}
 export const useSummary = () => useQuery({ queryKey: [KEY, "summary"], queryFn: client.summary, refetchInterval: 5000 });
 export const useSessions = () => useQuery({ queryKey: [KEY, "sessions"], queryFn: client.sessions });
 export const useAttention = () => useQuery({ queryKey: [KEY, "attention"], queryFn: client.attention, refetchInterval: 5000 });

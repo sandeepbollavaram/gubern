@@ -35,6 +35,7 @@ import { useUIStore } from "../store";
 import { Kbd, MenuItem, Popover, StatusIcon } from "../ui/primitives";
 import { cx } from "../ui/util";
 import { GubernMark } from "./GubernMark";
+import { clearApiKey } from "../data/auth";
 
 interface NavItemProps {
   to: string;
@@ -357,7 +358,7 @@ export function Rail() {
                 System status
               </MenuItem>
               <div className="my-1 border-t border-border" />
-              <MenuItem icon={<LogOut className="h-4 w-4" />} onSelect={close}>
+              <MenuItem icon={<LogOut className="h-4 w-4" />} onSelect={() => (close(), clearApiKey())}>
                 Sign out
               </MenuItem>
             </>
