@@ -331,3 +331,37 @@ The items added to existing phases are small and go in with them:
 | Prompt caching | K |
 | Durable run queue | L |
 | Circuit breakers for providers and MCP servers, per-connector rate limits | N |
+
+## 10. Progress
+
+Updated 2026-11-08 04:35 IST. Local commits only.
+
+**J: policy integration. Done.**
+- Nine commits from `dev/gubern-policy` landed on this branch; the run-deadline commit was already here as `d3dfaab`.
+- The full suite passes.
+- On the binary:
+  - a misspelt tool refuses to start;
+  - `run_terminal` deny reports "disabled by policy";
+  - `read_file` ask opens an approval in the shared service.
+
+**K: skills. Server, dashboard and app are done; three items remain.**
+
+| Item | Commit |
+|---|---|
+| Skills API: list, read, on/off switches, audited | `624e0a5` |
+| `skill_activated` run event | `99f1975` |
+| Unreadable skill roots are reported, not hidden | `09aa4bb` |
+| Injection gate test | `f386dad` |
+| Pinned installs behind a HIGH RISK approval, `skills.lock`, tamper detection (catalog fails closed) | `65e5842` |
+| Dashboard Skills page, install dialog, badges, chat chip | `bc46685`, `f753810` (`dist`: `ea358c5`, `c978f1b`) |
+| App: Skills on Operate, chip in chat, changed-skill warning | `14b9c24`, `5751571` |
+
+- **Scopes.** Reads use `agents:read`; switches and installs use `system:manage`. No new scopes, unlike the first draft of §2.
+- **Live check.** An install requested over the API was approved on the phone by slide and PIN, landed pinned, and was flagged after a file was edited.
+- **Remaining in K:**
+  - **K.5** the `agents/gubern.yaml` sidecar;
+  - **K.6** `gubern skills install` and `gubern skills eval` CLIs, plus the eval harness: local Qwen on Ollama, and Claude once D7's cap is set;
+  - **K.7** provider prompt caching.
+- **Not verified live:** the git install path. Its input checks are tested, but no network fetch was run.
+
+**Next:** finish K.5–K.7, then start **L** (run state machine, resume after restart, completion checks, team roles as profiles, kill-9 harness).
