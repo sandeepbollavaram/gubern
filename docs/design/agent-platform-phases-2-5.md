@@ -344,7 +344,7 @@ Updated 2026-11-08 04:35 IST. Local commits only.
   - `run_terminal` deny reports "disabled by policy";
   - `read_file` ask opens an approval in the shared service.
 
-**K: skills. Server, dashboard and app are done; three items remain.**
+**K: skills. Done, except real-model measurements.**
 
 | Item | Commit |
 |---|---|
@@ -353,15 +353,21 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 | Unreadable skill roots are reported, not hidden | `09aa4bb` |
 | Injection gate test | `f386dad` |
 | Pinned installs behind a HIGH RISK approval, `skills.lock`, tamper detection (catalog fails closed) | `65e5842` |
-| Dashboard Skills page, install dialog, badges, chat chip | `bc46685`, `f753810` (`dist`: `ea358c5`, `c978f1b`) |
+| `gubern skills install` | `62098f1` |
+| `agents/gubern.yaml` sidecar | `ac27abe` |
+| `gubern skills eval`, which approves only the declared check | `11eb17e` |
+| Terminal approvals carry their command | `06e2557` |
+| Claude prompt caching, with cached tokens counted | `fde77d9` |
+| Dashboard Skills page, install dialog, sidecar fields | `bc46685`, `f753810`, `cfd8a68` |
 | App: Skills on Operate, chip in chat, changed-skill warning | `14b9c24`, `5751571` |
 
-- **Scopes.** Reads use `agents:read`; switches and installs use `system:manage`. No new scopes, unlike the first draft of §2.
-- **Live check.** An install requested over the API was approved on the phone by slide and PIN, landed pinned, and was flagged after a file was edited.
-- **Remaining in K:**
-  - **K.5** the `agents/gubern.yaml` sidecar;
-  - **K.6** `gubern skills install` and `gubern skills eval` CLIs, plus the eval harness: local Qwen on Ollama, and Claude once D7's cap is set;
-  - **K.7** provider prompt caching.
-- **Not verified live:** the git install path. Its input checks are tested, but no network fetch was run.
+- **Live checks:**
+  - an install requested over the API was approved on the phone by slide and PIN, then flagged after a file was edited;
+  - a CLI install with `--wait` reported the approval;
+  - `skills eval` ran end to end on the fake model (2/2 with and without the skill).
+- **Open:**
+  - measuring real gains needs a real model (local Qwen, or Claude after D7);
+  - the git install path and live Claude caching are not verified against the network;
+  - Bedrock Converse has no cache points yet.
 
-**Next:** finish K.5–K.7, then start **L** (run state machine, resume after restart, completion checks, team roles as profiles, kill-9 harness).
+**Next: L.** In order: the run state machine, resume after restart, completion checks, team roles as profiles, and the kill-9 harness.
