@@ -439,6 +439,7 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	mux.Handle("GET /api/agents/catalog", s.requireAPIKey(http.HandlerFunc(s.handleAgentCatalog)))
 	mux.Handle("POST /api/agents/approve", s.requireAPIKey(http.HandlerFunc(s.handleAgentApprove)))
 	mux.Handle("GET /api/agents/pending", s.requireAPIKey(http.HandlerFunc(s.handleAgentPending)))
+	mux.Handle("GET /api/attention", s.requireAPIKey(http.HandlerFunc(s.handleAttention)))
 	mux.Handle("GET /api/agents/history", s.requireAPIKey(http.HandlerFunc(s.handleAgentHistory)))
 	mux.Handle("GET /api/agents/history/{id}", s.requireAPIKey(http.HandlerFunc(s.handleAgentSessionHistory)))
 

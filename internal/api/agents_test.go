@@ -52,6 +52,13 @@ func (s stubRuntime) SessionHistory(string) []SessionMessage {
 // wired, returning its address and a cleanup func.
 func newAgentTestServer(t *testing.T, rt AgentRuntime) string {
 	t.Helper()
+	return newAgentTestServerWith(t, rt, nil)
+}
+
+// newAgentTestServerWith is newAgentTestServer with a hook to wire more
+// providers before the server starts.
+func newAgentTestServerWith(t *testing.T, rt AgentRuntime, configure func(*Server)) string {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gubern.cue")
 	if err := os.WriteFile(path, []byte(sampleConfig), 0o600); err != nil {
@@ -70,6 +77,9 @@ func newAgentTestServer(t *testing.T, rt AgentRuntime) string {
 
 	srv := New(addr, mgr.Holder(), "test", discardLogger())
 	srv.SetAgentRuntime(rt)
+	if configure != nil {
+		configure(srv)
+	}
 	srv.Start()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
