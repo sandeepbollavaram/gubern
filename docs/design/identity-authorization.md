@@ -263,9 +263,12 @@ Until then:
 
 - The environment allow-lists keep working as the channel's own access
   control.
-- **One hard rule already applies:** an external identity that has been
-  **revoked** in the identity store is refused by its channel even if it is
-  still in an environment allow-list. Revocation has to win.
+- **Revocation has to win:** an external identity that has been revoked in
+  the identity store must be refused by its channel even if it is still in
+  an environment allow-list. The store answers this (`ExternalRevoked`), but
+  milestone A creates no links (only pairing, F, will), so the bots do not
+  consult it yet. Wiring the check into each channel is part of F's
+  acceptance gate.
 
 ## 9. Legacy credential migration
 
