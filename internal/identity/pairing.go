@@ -1,8 +1,13 @@
 package identity
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -257,13 +262,64 @@ func (s *Store) RecordPairingFailure(channel, who, why string) {
 	_ = s.Record(channel+":"+who, "pairing.failed", "pairing", why)
 }
 
-// ValidPublicKey reports whether k is a base64 Ed25519 public key (32 bytes).
-func ValidPublicKey(k string) bool {
-	b, err := base64.StdEncoding.DecodeString(k)
-	if err != nil {
-		b, err = base64.RawURLEncoding.DecodeString(k)
+// decodeB64 accepts standard or URL-safe base64, padded or not.
+func decodeB64(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if b, err := enc.DecodeString(s); err == nil {
+			return b, nil
+		}
 	}
-	return err == nil && len(b) == 32
+	return nil, errors.New("not base64")
+}
+
+// parseDeviceKey decodes a device public key: a raw 32-byte Ed25519 key, or
+// a P-256 key as SubjectPublicKeyInfo DER (what iOS Secure Enclave and
+// Android Keystore keep in hardware).
+func parseDeviceKey(k string) (crypto.PublicKey, error) {
+	b, err := decodeB64(k)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) == ed25519.PublicKeySize {
+		return ed25519.PublicKey(b), nil
+	}
+	pub, err := x509.ParsePKIXPublicKey(b)
+	if err != nil {
+		return nil, err
+	}
+	if ec, ok := pub.(*ecdsa.PublicKey); ok && ec.Curve == elliptic.P256() {
+		return ec, nil
+	}
+	return nil, errors.New("unsupported key type")
+}
+
+// ValidPublicKey reports whether k is a supported device public key: base64
+// Ed25519 (32 bytes) or base64 P-256 SubjectPublicKeyInfo.
+func ValidPublicKey(k string) bool {
+	_, err := parseDeviceKey(k)
+	return err == nil
+}
+
+// VerifyDeviceSignature checks sig (base64) over msg with the device public
+// key pub: Ed25519 directly, P-256 as ASN.1 ECDSA over SHA-256(msg).
+func VerifyDeviceSignature(pub, msg, sig string) bool {
+	key, err := parseDeviceKey(pub)
+	if err != nil {
+		return false
+	}
+	s, err := decodeB64(sig)
+	if err != nil {
+		return false
+	}
+	switch k := key.(type) {
+	case ed25519.PublicKey:
+		return ed25519.Verify(k, []byte(msg), s)
+	case *ecdsa.PublicKey:
+		sum := sha256.Sum256([]byte(msg))
+		return ecdsa.VerifyASN1(k, sum[:], s)
+	}
+	return false
 }
 
 // IssueFunc issues an API key for principal and returns its id.

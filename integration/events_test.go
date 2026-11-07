@@ -34,7 +34,7 @@ type sseReader struct {
 	body io.Closer
 }
 
-func openSSE(t *testing.T, ctx context.Context, method, url, key string, body any, headers map[string]string) (*http.Response, *sseReader) {
+func openSSE(ctx context.Context, t *testing.T, method, url, key string, body any, headers map[string]string) (http.Header, *sseReader) {
 	t.Helper()
 	var rd io.Reader
 	if body != nil {
@@ -59,7 +59,7 @@ func openSSE(t *testing.T, ctx context.Context, method, url, key string, body an
 	}
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	return resp, &sseReader{sc: sc, body: resp.Body}
+	return resp.Header, &sseReader{sc: sc, body: resp.Body}
 }
 
 // next returns the next frame (an event, or a heartbeat comment).
@@ -103,9 +103,9 @@ func TestEvents_DisconnectAndResume(t *testing.T) {
 	defer p.Stop(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	resp, rd := openSSE(t, ctx, http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key,
+	resp, rd := openSSE(ctx, t, http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key,
 		map[string]string{"message": toolRun, "session_id": "ev-1"}, nil)
-	runID := resp.Header.Get("X-Gubern-Run-Id")
+	runID := resp.Get("X-Gubern-Run-Id")
 	if !strings.HasPrefix(runID, "r-") {
 		t.Fatalf("run id header = %q", runID)
 	}
@@ -135,7 +135,7 @@ func TestEvents_DisconnectAndResume(t *testing.T) {
 	}
 
 	last := seen[len(seen)-1]
-	_, rd2 := openSSE(t, context.Background(), http.MethodGet, p.APIAddr+"/api/runs/"+runID+"/events", key, nil,
+	_, rd2 := openSSE(context.Background(), t, http.MethodGet, p.APIAddr+"/api/runs/"+runID+"/events", key, nil,
 		map[string]string{"Last-Event-ID": strconv.FormatInt(last, 10)})
 	var done map[string]any
 	for done == nil {
@@ -173,9 +173,9 @@ func TestEvents_DisconnectAndResume(t *testing.T) {
 func TestEvents_NoSecretsInPayloads(t *testing.T) {
 	key, p := eventsServer(t)
 	secret := "sk-ant-api03-" + strings.Repeat("Z", 40)
-	resp, rd := openSSE(t, context.Background(), http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key,
+	resp, rd := openSSE(context.Background(), t, http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key,
 		map[string]string{"message": "show config [[reply:the key is " + secret + "]]", "session_id": "ev-2"}, nil)
-	runID := resp.Header.Get("X-Gubern-Run-Id")
+	runID := resp.Get("X-Gubern-Run-Id")
 	var streamed strings.Builder
 	for {
 		ev, ok := rd.next()
@@ -217,8 +217,8 @@ func TestEvents_HeartbeatCancelAndDuplicates(t *testing.T) {
 	hdr := map[string]string{"Idempotency-Key": "submit-42"}
 	body := map[string]string{"message": toolRun, "session_id": "ev-3"}
 
-	resp, rd := openSSE(t, context.Background(), http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key, body, hdr)
-	runID := resp.Header.Get("X-Gubern-Run-Id")
+	resp, rd := openSSE(context.Background(), t, http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key, body, hdr)
+	runID := resp.Get("X-Gubern-Run-Id")
 	pings, approval := 0, false
 	deadline := time.Now().Add(20 * time.Second)
 	for (pings == 0 || !approval) && time.Now().Before(deadline) {
@@ -239,8 +239,8 @@ func TestEvents_HeartbeatCancelAndDuplicates(t *testing.T) {
 
 	// The same submit again (a retry after a dropped connection) joins the
 	// same run and replays it; no second run starts.
-	resp2, rd2 := openSSE(t, context.Background(), http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key, body, hdr)
-	if got := resp2.Header.Get("X-Gubern-Run-Id"); got != runID {
+	resp2, rd2 := openSSE(context.Background(), t, http.MethodPost, p.APIAddr+"/api/agents/submit?events=1", key, body, hdr)
+	if got := resp2.Get("X-Gubern-Run-Id"); got != runID {
 		t.Fatalf("duplicate submit run = %s, want %s", got, runID)
 	}
 	if ev, _ := rd2.next(); ev.id != "1" || ev.event != "run_started" {
@@ -287,9 +287,9 @@ func TestEvents_HeartbeatCancelAndDuplicates(t *testing.T) {
 func TestEvents_ClassicStreamUnchanged(t *testing.T) {
 	key, p := eventsServer(t)
 	defer p.Stop(t)
-	resp, rd := openSSE(t, context.Background(), http.MethodPost, p.APIAddr+"/api/agents/submit", key,
+	resp, rd := openSSE(context.Background(), t, http.MethodPost, p.APIAddr+"/api/agents/submit", key,
 		map[string]string{"message": "hi [[reply:classic-ok]]", "session_id": "ev-4"}, nil)
-	if resp.Header.Get("X-Gubern-Run-Id") != "" {
+	if resp.Get("X-Gubern-Run-Id") != "" {
 		t.Error("classic stream started a logged run")
 	}
 	var all strings.Builder

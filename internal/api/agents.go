@@ -342,6 +342,11 @@ func (s *Server) handleAgentApprove(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAccess(w, r, authz.ApprovalsDecide, resSession, req.SessionID) {
 		return
 	}
+	// A paired device approves only through the step-up endpoint (H).
+	if deviceFrom(r.Context()) != "" && req.Approved {
+		s.deny(w, r, http.StatusForbidden, authz.ApprovalsDecide, "stepup-required", principalID(r))
+		return
+	}
 	// With the approval service every decision names its decider and goes
 	// through the one decision path (milestone B).
 	if dec, ok := s.agentRuntime.(approvalDecider); ok && s.approvalStore != nil {

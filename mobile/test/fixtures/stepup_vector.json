@@ -1,0 +1,11 @@
+{
+  "action_hash": "abababababababababababababababababababababababababababababababab",
+  "approval_id": "0123456789abcdef",
+  "challenge_id": "su_000000000000000000000000",
+  "decision": "approve",
+  "message": "gubern-stepup-v1\nsu_000000000000000000000000\n00112233\n0123456789abcdef\nabababababababababababababababababababababababababababababababab\napprove",
+  "nonce": "00112233",
+  "public_key": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+  "seed_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "signature": "EtTJVAgsajR8zn6+AFkwMCWbA+eOxnrw02YW5k44X521p9YFczMmg+R3SDcFPwzmPqWpwWu7o3MNXJXZvB3kBw=="
+}

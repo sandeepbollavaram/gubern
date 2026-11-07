@@ -65,6 +65,7 @@ type Server struct {
 	// pairLimiter rate-limits pairing redemption per address; deviceSeen
 	// throttles last-seen writes (milestone F).
 	pairLimiter *security.HTTPRateLimiter
+	stepUp      stepUpStore
 	deviceSeen  sync.Map
 	// approvalStore reads the persistent approval service (milestone B).
 	approvalStore ApprovalStore
@@ -463,6 +464,7 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "GET /api/attention", http.HandlerFunc(s.handleAttention))
 	s.route(mux, "GET /api/me", http.HandlerFunc(s.handleMe))
 	s.route(mux, "POST /api/pairing", http.HandlerFunc(s.handlePairingCreate))
+	s.route(mux, "POST /api/stepup/challenge", http.HandlerFunc(s.handleStepUpChallenge))
 	s.route(mux, "GET /api/devices", http.HandlerFunc(s.handleDevicesList))
 	s.route(mux, "DELETE /api/devices/{id}", http.HandlerFunc(s.handleDeviceRevoke))
 	s.route(mux, "POST /api/devices/{id}/rotate", http.HandlerFunc(s.handleDeviceRotate))

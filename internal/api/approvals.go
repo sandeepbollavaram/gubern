@@ -110,6 +110,8 @@ type approvalDecisionRequest struct {
 	Reason     string `json:"reason,omitempty"`
 	// Via labels the client (api, dashboard, mobile, tui).
 	Via string `json:"via,omitempty"`
+	// StepUp is required from a paired device to approve (milestone H).
+	StepUp *stepUpProof `json:"stepup,omitempty"`
 }
 
 // handleApprovalDecision serves POST /api/approvals/{id}/decision.
@@ -144,6 +146,17 @@ func (s *Server) handleApprovalDecision(w http.ResponseWriter, r *http.Request) 
 	}
 	if !s.requireAccess(w, r, authz.ApprovalsDecide, resSession, cur.SessionID) {
 		return
+	}
+	// A paired device decides as "mobile", and approves only with a signed
+	// step-up over this approval's action hash.
+	if dev := deviceFrom(r.Context()); dev != "" {
+		req.Via = "mobile"
+		if req.Approved {
+			if why := s.verifyStepUp(dev, cur.ID, req.ActionHash, true, req.StepUp); why != "" {
+				s.deny(w, r, http.StatusForbidden, authz.ApprovalsDecide, why, principalID(r))
+				return
+			}
+		}
 	}
 	tr, a, err := dec.DecideApproval(r.Context(), "", id, req.Approved, req.ActionHash,
 		approvals.Decider{PrincipalID: principalID(r), Channel: req.Via})

@@ -82,6 +82,7 @@ var routeScopes = map[string]authz.Scope{
 	"POST /api/agents/{id}/chat":         authz.AgentsRun,
 
 	"POST /api/pairing":                      authz.DevicesManage,
+	"POST /api/stepup/challenge":             authz.ApprovalsDecide,
 	"GET /api/devices":                       authz.DevicesRead,
 	"DELETE /api/devices/{id}":               authz.DevicesManage,
 	"POST /api/devices/{id}/rotate":          authz.DevicesManage,
@@ -145,6 +146,19 @@ var unitTestNoAuth bool
 
 type subjectCtxKey struct{}
 
+type deviceCtxKey struct{}
+
+func withDevice(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, deviceCtxKey{}, id)
+}
+
+// deviceFrom returns the paired device whose credential authenticated the
+// request ("" for any other credential).
+func deviceFrom(ctx context.Context) string {
+	id, _ := ctx.Value(deviceCtxKey{}).(string)
+	return id
+}
+
 func withSubject(ctx context.Context, sub *authz.Subject) context.Context {
 	return context.WithValue(ctx, subjectCtxKey{}, sub)
 }
@@ -187,10 +201,13 @@ func (s *Server) authorizeWith(scope authz.Scope, allowLoopback bool, h http.Han
 			return
 		}
 		s.authMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			sub, status, reason := s.resolveSubject(r)
+			sub, deviceID, status, reason := s.resolveSubject(r)
 			if sub == nil {
 				s.deny(w, r, status, scope, reason, "")
 				return
+			}
+			if deviceID != "" {
+				r = r.WithContext(withDevice(r.Context(), deviceID))
 			}
 			if scope == scopeAuthenticated {
 				s.keyLimit(h).ServeHTTP(w, r.WithContext(withSubject(r.Context(), sub)))
@@ -215,43 +232,43 @@ func hasCredential(r *http.Request) bool {
 // resolveSubject maps the authenticated credential to its principal and live
 // grants. Only the credential decides the principal; no header, query or body
 // field is consulted.
-func (s *Server) resolveSubject(r *http.Request) (*authz.Subject, int, string) {
+func (s *Server) resolveSubject(r *http.Request) (*authz.Subject, string, int, string) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		return nil, http.StatusUnauthorized, authz.ReasonUnauthenticated
+		return nil, "", http.StatusUnauthorized, authz.ReasonUnauthenticated
 	}
 	if s.identity == nil {
-		return nil, http.StatusServiceUnavailable, "identity-not-configured"
+		return nil, "", http.StatusServiceUnavailable, "identity-not-configured"
 	}
 	if user.KeyID == "" {
-		return nil, http.StatusUnauthorized, "unbound-credential"
+		return nil, "", http.StatusUnauthorized, "unbound-credential"
 	}
 	ci, err := s.identity.Credential(user.KeyID)
 	if errors.Is(err, identity.ErrNotFound) {
-		return nil, http.StatusUnauthorized, "unbound-credential"
+		return nil, "", http.StatusUnauthorized, "unbound-credential"
 	}
 	if err != nil {
 		s.log.Error("resolving principal failed", "key_id", user.KeyID, "err", err)
-		return nil, http.StatusServiceUnavailable, "identity-unavailable"
+		return nil, "", http.StatusServiceUnavailable, "identity-unavailable"
 	}
 	if ci.DeviceID != "" {
 		// A paired device's credential stops with the device.
 		d, derr := s.identity.Device(ci.DeviceID)
 		if derr != nil || d.RevokedAt != nil {
-			return nil, http.StatusUnauthorized, "device-revoked"
+			return nil, "", http.StatusUnauthorized, "device-revoked"
 		}
 		s.touchDevice(ci.DeviceID)
 	}
 	sub, err := s.identity.Subject(ci.PrincipalID)
 	if err != nil {
 		s.log.Error("loading grants failed", "principal", ci.PrincipalID, "err", err)
-		return nil, http.StatusServiceUnavailable, "identity-unavailable"
+		return nil, "", http.StatusServiceUnavailable, "identity-unavailable"
 	}
 	if !sub.Active {
-		return nil, http.StatusForbidden, authz.ReasonInactive
+		return nil, "", http.StatusForbidden, authz.ReasonInactive
 	}
 	identity.ApplyCeiling(sub, ci.Ceiling)
-	return sub, 0, ""
+	return sub, ci.DeviceID, 0, ""
 }
 
 // deny writes an authorization failure and logs it (never with a secret).
