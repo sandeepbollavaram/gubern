@@ -1,27 +1,50 @@
-import { lazy } from "react";
+import { lazy, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router";
-import { Layout } from "./components/layout/Layout";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
+import { Shell } from "./app/Shell";
+import { LegacyPage } from "./features/library/LegacyPage";
+import { useUIStore } from "./store";
 
-// Every page is its own chunk, fetched the first time it is opened, so the
-// app shell (sidebar, top bar) renders before page code and the charts
-// library arrive (it was a single ~700 kB bundle).
+// New screens (docs/design/dashboard-ux-spec.md).
+const Home = lazy(() => import("./features/home/Home").then((m) => ({ default: m.Home })));
+const ChatPage = lazy(() => import("./features/chat/ChatPage").then((m) => ({ default: m.ChatPage })));
+const Inbox = lazy(() => import("./features/inbox/Inbox").then((m) => ({ default: m.Inbox })));
+const Outputs = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Outputs })));
+const Automations = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Automations })));
+
+// Existing pages, now placed in the new information architecture (§3).
 const Overview = lazy(() => import("./pages/Overview").then((m) => ({ default: m.Overview })));
 const RoutesPage = lazy(() => import("./pages/Routes").then((m) => ({ default: m.RoutesPage })));
 const RouteBuilder = lazy(() => import("./pages/RouteBuilder").then((m) => ({ default: m.RouteBuilder })));
 const Namespaces = lazy(() => import("./pages/Namespaces").then((m) => ({ default: m.Namespaces })));
 const Metrics = lazy(() => import("./pages/Metrics").then((m) => ({ default: m.Metrics })));
-const Security = lazy(() => import("./pages/Security").then((m) => ({ default: m.Security })));
-const AuditLog = lazy(() => import("./pages/AuditLog").then((m) => ({ default: m.AuditLog })));
-const Secrets = lazy(() => import("./pages/Secrets").then((m) => ({ default: m.Secrets })));
 const Nodes = lazy(() => import("./pages/Nodes").then((m) => ({ default: m.Nodes })));
 const Plugins = lazy(() => import("./pages/Plugins").then((m) => ({ default: m.Plugins })));
-const Settings = lazy(() => import("./pages/Settings").then((m) => ({ default: m.Settings })));
 const Healing = lazy(() => import("./pages/Healing").then((m) => ({ default: m.Healing })));
 const Traffic = lazy(() => import("./pages/Traffic").then((m) => ({ default: m.Traffic })));
 const Agents = lazy(() => import("./pages/Agents").then((m) => ({ default: m.Agents })));
+const Security = lazy(() => import("./pages/Security").then((m) => ({ default: m.Security })));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } } });
+
+// Old Settings links open the Settings modal over Home.
+function OpenSettings({ section }: { section: "general" | "security" }) {
+  const open = useUIStore((s) => s.openSettings);
+  useEffect(() => open(section), [open, section]);
+  return <Navigate to="/" replace />;
+}
+
+// Keeps bookmarks to the old flat URLs working.
+function Legacy({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={to + search} replace />;
+}
+
+const legacy = (title: string, body: string, el: React.ReactNode) => (
+  <LegacyPage title={title} body={body}>
+    {el}
+  </LegacyPage>
+);
 
 // Served under /dashboard/ by the Gubern management API (embedded dist).
 export default function App() {
@@ -29,21 +52,46 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename="/dashboard">
         <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<Overview />} />
-            <Route path="nodes" element={<Nodes />} />
-            <Route path="routes" element={<RoutesPage />} />
-            <Route path="routes/new" element={<RouteBuilder />} />
-            <Route path="namespaces" element={<Namespaces />} />
-            <Route path="traffic" element={<Traffic />} />
-            <Route path="security" element={<Security />} />
-            <Route path="metrics" element={<Metrics />} />
-            <Route path="plugins" element={<Plugins />} />
-            <Route path="audit" element={<AuditLog />} />
-            <Route path="secrets" element={<Secrets />} />
-            <Route path="healing" element={<Healing />} />
-            <Route path="agents" element={<Agents />} />
-            <Route path="settings" element={<Settings />} />
+          <Route element={<Shell />}>
+            <Route index element={<Home />} />
+            <Route path="chat/:id" element={<ChatPage />} />
+            <Route path="inbox" element={<Inbox />} />
+            <Route path="outputs" element={<Outputs />} />
+            <Route path="automations" element={<Automations />} />
+            <Route path="workspaces" element={legacy("Workspaces", "Namespaces and the folders agents may work in.", <Namespaces />)} />
+
+            <Route path="operate">
+              <Route index element={legacy("Overview", "Live state of this Gubern server.", <Overview />)} />
+              <Route path="routes" element={legacy("Routes", "Traffic Gubern serves, with health and backends.", <RoutesPage />)} />
+              <Route path="routes/new" element={legacy("New route", "Build a route and review it before applying.", <RouteBuilder />)} />
+              <Route path="traffic" element={legacy("Traffic", "Requests, errors and latency across routes.", <Traffic />)} />
+              <Route path="metrics" element={legacy("Metrics", "Raw Prometheus metrics.", <Metrics />)} />
+              <Route path="nodes" element={legacy("Nodes", "Machines in this cluster.", <Nodes />)} />
+              <Route path="healing" element={legacy("Healing", "Automatic recovery checks and actions.", <Healing />)} />
+              <Route path="agents" element={legacy("Agents", "Specialist agents, their capabilities and recent runs.", <Agents />)} />
+              <Route path="security" element={legacy("Security", "Edge policy, TLS and identity.", <Security />)} />
+            </Route>
+            <Route path="build/plugins" element={legacy("Plugins", "WASM plugins attached to routes.", <Plugins />)} />
+            <Route
+              path="build/forge"
+              element={legacy("Forge", "Builds and deploys.", <p className="text-sm text-muted">Forge builds move here in Phase 3.</p>)}
+            />
+
+            {/* Old URLs */}
+            <Route path="routes" element={<Legacy to="/operate/routes" />} />
+            <Route path="routes/new" element={<Legacy to="/operate/routes/new" />} />
+            <Route path="nodes" element={<Legacy to="/operate/nodes" />} />
+            <Route path="traffic" element={<Legacy to="/operate/traffic" />} />
+            <Route path="metrics" element={<Legacy to="/operate/metrics" />} />
+            <Route path="healing" element={<Legacy to="/operate/healing" />} />
+            <Route path="agents" element={<Legacy to="/operate/agents" />} />
+            <Route path="security" element={<Legacy to="/operate/security" />} />
+            <Route path="namespaces" element={<Legacy to="/workspaces" />} />
+            <Route path="plugins" element={<Legacy to="/build/plugins" />} />
+            <Route path="settings" element={<OpenSettings section="general" />} />
+            <Route path="secrets" element={<OpenSettings section="security" />} />
+            <Route path="audit" element={<OpenSettings section="security" />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

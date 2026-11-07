@@ -1,0 +1,1 @@
+import{p as e}from"./react-CG_9ZY4V.js";var t=e();function n({label:e,value:n}){return(0,t.jsxs)(`div`,{className:`rounded-lg border border-border bg-card p-4`,children:[(0,t.jsx)(`div`,{className:`text-xl font-semibold`,children:n}),(0,t.jsx)(`div`,{className:`mt-1 text-xs text-muted-foreground`,children:e})]})}export{n as t};

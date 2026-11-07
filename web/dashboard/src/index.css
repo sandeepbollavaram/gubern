@@ -1,20 +1,66 @@
+@import "@fontsource/fira-sans/400.css";
+@import "@fontsource/fira-sans/500.css";
+@import "@fontsource/fira-sans/600.css";
+@import "@fontsource/fira-code/400.css";
+@import "@fontsource/fira-code/500.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Gubern dashboard theme. Default is dark; variables are HSL triples consumed
-   by tailwind.config.ts. */
-:root {
-  --background: 222 47% 7%;
-  --foreground: 210 40% 96%;
-  --card: 222 40% 11%;
-  --card-foreground: 210 40% 96%;
-  --muted: 217 33% 17%;
-  --muted-foreground: 215 20% 65%;
-  --border: 217 33% 20%;
-  --accent: 217 33% 17%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 210 40% 98%;
+/* Gubern design tokens (docs/design/dashboard-ux-spec.md §6, brand colours
+   from internal/tui/brand). HSL triples consumed by tailwind.config.ts.
+   Contrast: foreground and muted text clear 4.5:1 on background and surface
+   in both themes. Status colours are always paired with an icon and a word,
+   never used alone. Fonts are bundled: the dashboard makes no third-party
+   requests. */
+:root,
+:root.dark {
+  color-scheme: dark;
+  --background: 0 0% 5%; /* #0D0D0D canvas */
+  --rail: 0 0% 4%; /* rail sits a step darker */
+  --surface: 0 0% 8%; /* #141414 raised: cards, composer, menus */
+  --surface-2: 0 0% 11%; /* hover / nested */
+  --card: 0 0% 8%;
+  --card-foreground: 0 0% 91%;
+  --foreground: 0 0% 91%; /* #E8E8E8 */
+  --muted: 0 0% 56%; /* #8F8F8F secondary text (5.9:1) */
+  --muted-foreground: 0 0% 56%;
+  --border: 0 0% 16%; /* #2A2A2A */
+  --accent: 0 0% 12%; /* hover background */
+  --selected: 210 38% 16%; /* #1A2A3A */
+  --primary: 210 71% 54%; /* #378ADD */
+  --primary-foreground: 0 0% 100%;
+  --success: 162 69% 37%; /* #1D9E75 */
+  --warning: 36 86% 55%; /* #EF9F27 */
+  --danger: 15 68% 52%; /* #D85A30 */
+  --ai: 245 43% 50%; /* #534AB7 agent activity */
+  --ai-foreground: 245 70% 78%;
+  --ring: 210 71% 60%;
+}
+
+:root.light {
+  color-scheme: light;
+  --background: 60 9% 98%; /* #FAFAF9 */
+  --rail: 60 5% 95%;
+  --surface: 0 0% 100%;
+  --surface-2: 60 5% 96%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 7%;
+  --foreground: 0 0% 7%;
+  --muted: 0 0% 37%; /* #5F5F5F (6.4:1) */
+  --muted-foreground: 0 0% 37%;
+  --border: 60 4% 88%;
+  --accent: 60 5% 93%;
+  --selected: 210 70% 93%;
+  --primary: 211 73% 45%; /* darker blue for contrast on white */
+  --primary-foreground: 0 0% 100%;
+  --success: 162 76% 28%;
+  --warning: 32 90% 38%;
+  --danger: 15 72% 42%;
+  --ai: 245 45% 48%;
+  --ai-foreground: 245 45% 42%;
+  --ring: 211 73% 45%;
 }
 
 html,
@@ -27,5 +73,29 @@ body,
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Fira Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus for keyboard users only. */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Thin, quiet scrollbars that match the surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
 }
