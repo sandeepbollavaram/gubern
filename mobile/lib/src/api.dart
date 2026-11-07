@@ -338,6 +338,9 @@ class SkillInfo {
   final bool enabled, pinned, tampered;
 }
 
+/// Statuses of a run still in progress (Phase 3 state machine).
+const liveRunStatuses = {'running', 'waiting_approval', 'verifying'};
+
 class RunInfo {
   RunInfo.fromJson(Map<String, dynamic> j)
     : id = j['id'] as String? ?? '',
@@ -346,6 +349,7 @@ class RunInfo {
       lastSeq = (j['last_seq'] as num?)?.toInt() ?? 0;
   final String id, sessionId, status;
   final int lastSeq;
+  bool get live => liveRunStatuses.contains(status);
 }
 
 /// One event from a run (milestone D's recorded event log).

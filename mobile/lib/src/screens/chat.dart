@@ -107,7 +107,7 @@ class ChatController extends ChangeNotifier {
     // Reattach to a run that is still going.
     try {
       final rs = await api.runs(sessionId: sid, limit: 1);
-      if (rs.isNotEmpty && rs.first.status == 'running') {
+      if (rs.isNotEmpty && rs.first.live) {
         runId = rs.first.id;
         running = true;
         _changed();
@@ -184,6 +184,8 @@ class ChatController extends ChangeNotifier {
     }
     if (status == 'cancelled') items.add(StatusItem(_k('s'), 'Stopped.', 'warn'));
     if (status == 'failed') items.add(StatusItem(_k('s'), 'The run failed.', 'danger'));
+    if (status == 'completed') items.add(StatusItem(_k('s'), 'Completed and verified.', 'ok'));
+    if (status == 'partial') items.add(StatusItem(_k('s'), 'Finished, but not verified.', 'warn'));
     _changed();
   }
 
@@ -228,6 +230,9 @@ class ChatController extends ChangeNotifier {
           it.decidedBy = ev.decidedBy;
           it.decidedVia = ev.decidedVia;
         }
+      case 'check_result':
+        final passed = ev.status == 'passed';
+        items.add(StatusItem(_k('s'), passed ? 'Check passed: ${ev.label}' : 'Check failed (${ev.text}): ${ev.label}', passed ? 'ok' : 'warn'));
       case 'skill_activated':
         if (ev.label.isNotEmpty) items.add(SkillItem(_k('sk'), ev.label, ev.skillHash));
       case 'run_finished':
@@ -847,10 +852,15 @@ class _StatusLine extends StatelessWidget {
     final c = switch (it.tone) {
       'danger' => g.critical,
       'warn' => g.warn,
+      'ok' => g.ok,
       _ => g.muted,
     };
     return Center(
-      child: Pill(label: it.text, color: c, icon: it.tone == 'danger' ? Icons.error_outline_rounded : Icons.stop_circle_outlined),
+      child: Pill(label: it.text, color: c, icon: switch (it.tone) {
+          'danger' => Icons.error_outline_rounded,
+          'ok' => Icons.verified_outlined,
+          _ => Icons.info_outline_rounded,
+        }),
     );
   }
 }

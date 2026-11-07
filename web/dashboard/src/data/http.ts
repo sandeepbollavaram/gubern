@@ -226,6 +226,9 @@ const prefs = {
   },
 };
 
+// Statuses of a run still in progress (Phase 3 state machine).
+const LIVE_RUN = new Set(["running", "waiting_approval", "verifying"]);
+
 // ---- client -----------------------------------------------------------------
 
 const EMPTY: TranscriptItem[] = [];
@@ -441,7 +444,7 @@ class HttpClient implements GubernClient {
     try {
       const runs = await apiJSON<{ runs: WireRun[] }>(`/api/runs?session_id=${encodeURIComponent(sid)}&limit=1`);
       const run = runs.runs[0];
-      if (run && run.status === "running" && !this.runOf[sid]) {
+      if (run && LIVE_RUN.has(run.status) && !this.runOf[sid]) {
         this.runOf[sid] = run.id;
         this.running.add(sid);
         this.changed();
@@ -522,7 +525,19 @@ class HttpClient implements GubernClient {
         }
         if (ev.status === "cancelled") items.push({ kind: "status", id: this.localId("s"), text: "Stopped.", tone: "warning" });
         if (ev.status === "failed") items.push({ kind: "status", id: this.localId("s"), text: "The run failed.", tone: "danger" });
+        if (ev.status === "completed") items.push({ kind: "status", id: this.localId("s"), text: "Completed and verified.", tone: "ai" });
+        if (ev.status === "partial") items.push({ kind: "status", id: this.localId("s"), text: "Finished, but not verified: treat the result as partial.", tone: "warning" });
         this.running.delete(sid);
+        break;
+      }
+      case "check_result": {
+        const passed = ev.status === "passed";
+        items.push({
+          kind: "status",
+          id: this.localId("s"),
+          text: passed ? `Check passed: ${ev.label ?? ""}` : `Check failed (${ev.text ?? "attempt"}): ${ev.label ?? ""}`,
+          tone: passed ? "ai" : "warning",
+        });
         break;
       }
       default:

@@ -316,7 +316,7 @@ class _RunsPanel extends StatelessWidget {
                               ],
                             ),
                           ),
-                          if (r.status == 'running')
+                          if (r.live)
                             TextButton(
                               onPressed: () => onCancel(r),
                               style: TextButton.styleFrom(foregroundColor: g.critical, minimumSize: const Size(44, 36)),
@@ -343,7 +343,12 @@ class _RunStatus extends StatelessWidget {
     final g = context.g;
     return switch (status) {
       'running' => Pill(label: 'Running', color: g.aiText, icon: Icons.autorenew_rounded),
-      'done' || 'completed' || 'succeeded' => Pill(label: 'Done', color: g.ok, icon: Icons.check_rounded),
+      'waiting_approval' => Pill(label: 'Needs you', color: g.warn, icon: Icons.front_hand_outlined),
+      'verifying' => Pill(label: 'Verifying', color: g.aiText, icon: Icons.fact_check_outlined),
+      'completed' => Pill(label: 'Verified', color: g.ok, icon: Icons.verified_outlined),
+      'partial' => Pill(label: 'Partial', color: g.warn, icon: Icons.rule_rounded),
+      'interrupted' => Pill(label: 'Interrupted', color: g.warn, icon: Icons.pause_circle_outline_rounded),
+      'done' || 'succeeded' => Pill(label: 'Done', color: g.ok, icon: Icons.check_rounded),
       'failed' => Pill(label: 'Failed', color: g.critical, icon: Icons.close_rounded),
       'cancelled' => Pill(label: 'Stopped', color: g.warn, icon: Icons.stop_rounded),
       _ => Pill(label: status.isEmpty ? 'Unknown' : status, color: g.muted),
