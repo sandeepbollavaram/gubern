@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Launch splash: the app's navy canvas with the Gubern mark, so the
+<!-- Launch splash: the dashboard's near-black canvas with the Gubern mark, so the
      first frame matches the app (no white flash). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/gubern_canvas" />

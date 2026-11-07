@@ -21,3 +21,21 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Fira Sans and Fira Code, bundled (SIL OFL, licenses beside the files):
+  # the same type as the dashboard, and no runtime font downloads.
+  fonts:
+    - family: FiraSans
+      fonts:
+        - asset: assets/fonts/FiraSans-Regular.ttf
+        - asset: assets/fonts/FiraSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/FiraSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/FiraSans-Bold.ttf
+          weight: 700
+    - family: FiraCode
+      fonts:
+        - asset: assets/fonts/FiraCode-Regular.ttf
+        - asset: assets/fonts/FiraCode-Medium.ttf
+          weight: 500

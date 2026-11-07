@@ -60,7 +60,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(430, 1000));
     await tester.pumpWidget(MaterialApp(
       theme: buildTheme(Brightness.dark),
-      // Reduced motion: the aurora stands still (and the test can settle).
+      // Reduced motion: entrance animations stand still (and the test can settle).
       builder: (c, child) => MediaQuery(data: MediaQuery.of(c).copyWith(disableAnimations: true), child: child!),
       home: PairScreen(store: CredentialStore(MemoryStore()), deviceKey: NoKey(), onPaired: (_) {}),
     ));

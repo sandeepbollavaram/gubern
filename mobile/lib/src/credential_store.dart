@@ -74,6 +74,12 @@ class CredentialStore {
   CredentialStore(this._store);
   final SecureStore _store;
   static const _key = 'gubern.credentials.v1';
+  static const _prefKey = 'gubern.pref.';
+
+  /// Small, non-secret preferences (theme). Kept beside the credential but
+  /// not wiped with it.
+  Future<String?> pref(String name) => _store.read('$_prefKey$name');
+  Future<void> setPref(String name, String value) => _store.write('$_prefKey$name', value);
 
   Future<Credentials?> load() async {
     final raw = await _store.read(_key);
