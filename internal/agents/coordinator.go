@@ -827,20 +827,26 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	actionID := ActionID(ae.Request)
 	now := time.Now()
 	info := pendingInfo(session, actionID, ae.Request, c.cfg.WorkingDir, now)
-	if c.cfg.Approval == nil {
-		// Async (TUI/API) path: stash the action BEFORE showing it, so an
-		// approve call can't arrive while nothing is pending yet.
-		c.mu.Lock()
-		c.pending[session] = &pendingApproval{
-			toolName: name, tool: tool, params: params,
-			result:      make(chan bool, 1),
-			description: ae.Request.Description,
-			actionID:    actionID,
-			created:     now,
-			info:        info,
-		}
-		c.mu.Unlock()
+	// Register the action as pending BEFORE showing it, so an approve call
+	// can't arrive while nothing is pending yet. On the async (TUI/API) path
+	// the stashed tool is executed by the approve call. With a messaging
+	// approver (Telegram) the run itself waits below, and the entry has no
+	// tool: an API decision (dashboard, app) is just delivered to that wait,
+	// so whichever channel decides first wins.
+	pa := &pendingApproval{
+		toolName: name, params: params,
+		result:      make(chan bool, 1),
+		description: ae.Request.Description,
+		actionID:    actionID,
+		created:     now,
+		info:        info,
 	}
+	if c.cfg.Approval == nil {
+		pa.tool = tool
+	}
+	c.mu.Lock()
+	c.pending[session] = pa
+	c.mu.Unlock()
 	stepEnd("waiting", "")
 	agentevents.Emit(ctx, agentevents.Event{Type: agentevents.ApprovalRequired, SessionID: session, Tool: name, Approval: &info})
 	emit(approvalLine(ae.Request, actionID))
@@ -852,13 +858,15 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 	})
 
 	if c.cfg.Approval != nil {
-		approved := c.cfg.Approval(ctx, ae.Request)
+		approved, via := c.awaitDecision(ctx, session, pa, ae.Request)
+		// The API path audits its own decision in resolvePending only for
+		// stashed tools; this entry has none, so record every decision here.
 		c.auditAction(ctx, "agent.approval.decided", session, name, map[string]any{
-			"approved": approved, "via": "approver", "action": truncateForAudit(ae.Request.Description),
+			"approved": approved, "via": via, "action": truncateForAudit(ae.Request.Description),
 		})
 		agentevents.Emit(ctx, agentevents.Event{
 			Type: agentevents.ApprovalDecided, SessionID: session, Tool: name,
-			Status: map[bool]string{true: "approved", false: "rejected"}[approved], DecidedVia: "approver",
+			Status: map[bool]string{true: "approved", false: "rejected"}[approved], DecidedVia: via,
 			Approval: &info,
 		})
 		if !approved {
@@ -877,6 +885,33 @@ func (c *Coordinator) ExecuteLocalTool(ctx context.Context, session, name string
 
 	// Async (TUI) path: the action was stashed above; return the preview now.
 	return nil, nil
+}
+
+// awaitDecision waits for the first decision on a pending action from either
+// the messaging approver (Telegram) or an API approve call (dashboard, app),
+// then cancels the other and clears the pending entry. It returns the
+// decision and which side made it ("messaging" or "api"). A cancelled run
+// counts as a rejection.
+func (c *Coordinator) awaitDecision(ctx context.Context, session string, pa *pendingApproval, req ApprovalRequest) (approved bool, via string) {
+	actx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	fromApprover := make(chan bool, 1)
+	go func() { fromApprover <- c.cfg.Approval(actx, req) }()
+
+	select {
+	case approved = <-fromApprover:
+		via = "messaging"
+	case approved = <-pa.result:
+		via = "api"
+	case <-ctx.Done():
+		approved, via = false, "cancelled"
+	}
+	c.mu.Lock()
+	if c.pending[session] == pa {
+		delete(c.pending, session)
+	}
+	c.mu.Unlock()
+	return approved, via
 }
 
 // pendingInfo describes a pending action for clients (dashboard, app).
@@ -2369,14 +2404,13 @@ func errString(err error) string {
 // action resolved by ApproveAction (the TUI/API approve call), waited on
 // until the run's deadline.
 func (c *Coordinator) loopApprover(sessionID string, emit func(string)) ApprovalFunc {
-	if c.cfg.Approval != nil {
-		return c.cfg.Approval
-	}
 	return func(ctx context.Context, req ApprovalRequest) bool {
 		actionID := ActionID(req)
+		now := time.Now()
+		info := pendingInfo(sessionID, actionID, req, c.cfg.WorkingDir, now)
 		p := &pendingApproval{
 			toolName: req.Tool, result: make(chan bool, 1),
-			description: req.Description, actionID: actionID, created: time.Now(),
+			description: req.Description, actionID: actionID, created: now, info: info,
 		}
 		// Register before announcing: a client that approves the moment it
 		// reads the line (a script, or the TUI mid-stream) otherwise found
@@ -2384,9 +2418,20 @@ func (c *Coordinator) loopApprover(sessionID string, emit func(string)) Approval
 		c.mu.Lock()
 		c.pending[sessionID] = p
 		c.mu.Unlock()
+		agentevents.Emit(ctx, agentevents.Event{Type: agentevents.ApprovalRequired, SessionID: sessionID, Tool: req.Tool, Approval: &info})
 		emit(approvalLine(req, actionID))
 		if req.Preview != "" {
 			emit(req.Preview)
+		}
+		// With a messaging approver (Telegram) the first decision from it or
+		// from the API (dashboard, app) wins.
+		if c.cfg.Approval != nil {
+			ok, via := c.awaitDecision(ctx, sessionID, p, req)
+			agentevents.Emit(ctx, agentevents.Event{
+				Type: agentevents.ApprovalDecided, SessionID: sessionID, Tool: req.Tool,
+				Status: map[bool]string{true: "approved", false: "rejected"}[ok], DecidedVia: via, Approval: &info,
+			})
+			return ok
 		}
 		select {
 		case ok := <-p.result:
