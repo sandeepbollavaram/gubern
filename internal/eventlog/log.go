@@ -25,14 +25,30 @@ import (
 	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 )
 
-// Run statuses.
+// Run statuses (Phase 3 state machine, docs/design/agent-platform-phases-2-5.md).
+//
+// Live: running, waiting_approval (an approval is open), verifying (the
+// completion check is running). Final: completed (its check passed),
+// partial (its check still failed, or it ran out of budget), done (it
+// finished and declared no check, so nothing was verified), failed,
+// cancelled, and interrupted (the server stopped while it ran).
 const (
-	StatusRunning     = "running"
-	StatusDone        = "done"
-	StatusCancelled   = "cancelled"
-	StatusFailed      = "failed"
-	StatusInterrupted = "interrupted" // the server stopped while it ran
+	StatusRunning         = "running"
+	StatusWaitingApproval = "waiting_approval"
+	StatusVerifying       = "verifying"
+	StatusCompleted       = "completed"
+	StatusPartial         = "partial"
+	StatusDone            = "done"
+	StatusCancelled       = "cancelled"
+	StatusFailed          = "failed"
+	StatusInterrupted     = "interrupted"
 )
+
+// liveStatuses are the statuses of a run still in progress.
+var liveStatuses = map[string]bool{StatusRunning: true, StatusWaitingApproval: true, StatusVerifying: true}
+
+// finalOutcomes are the outcomes a run may report for itself.
+var finalOutcomes = map[string]bool{StatusCompleted: true, StatusPartial: true, StatusDone: true, StatusFailed: true}
 
 // Errors.
 var (
@@ -81,6 +97,10 @@ type liveRun struct {
 	subs   map[chan agentevents.Event]struct{}
 	detach *time.Timer
 	idem   string
+	// outcome is the run's own report of how it ended (run_outcome).
+	outcome string
+	// pending counts open approvals, for waiting_approval.
+	pending int
 }
 
 var migrations = []string{`
@@ -136,7 +156,7 @@ func Open(path string, opts Options) (*Log, error) {
 		return nil, err
 	}
 	now := l.now().UnixMilli()
-	if _, err := db.Exec(`UPDATE runs SET status = ?, ended_at = ? WHERE status = ?`, StatusInterrupted, now, StatusRunning); err != nil {
+	if _, err := db.Exec(`UPDATE runs SET status = ?, ended_at = ? WHERE status IN (?, ?, ?)`, StatusInterrupted, now, StatusRunning, StatusWaitingApproval, StatusVerifying); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -289,6 +309,7 @@ func (l *Log) appendLocked(lr *liveRun, ev agentevents.Event) (agentevents.Event
 		return ev, err
 	}
 	lr.run.LastSeq = ev.Seq
+	l.trackStatusLocked(lr, ev)
 	for ch := range lr.subs {
 		select {
 		case ch <- ev:
@@ -313,6 +334,11 @@ func (l *Log) Finish(runID, status string) {
 	if !ok {
 		return
 	}
+	// A run that reported its own outcome ends with it, unless it was
+	// cancelled or failed outside its own control.
+	if status == StatusDone && lr.outcome != "" {
+		status = lr.outcome
+	}
 	_, _ = l.appendLocked(lr, agentevents.Event{Type: agentevents.RunFinished, Status: status})
 	now := l.now()
 	_, _ = l.db.Exec(`UPDATE runs SET status = ?, ended_at = ? WHERE id = ?`, status, now.UnixMilli(), runID)
@@ -324,6 +350,41 @@ func (l *Log) Finish(runID, status string) {
 	}
 	lr.cancel()
 	delete(l.live, runID)
+}
+
+// trackStatusLocked moves a live run through the state machine as its
+// events arrive, and records the outcome it reports.
+func (l *Log) trackStatusLocked(lr *liveRun, ev agentevents.Event) {
+	next := lr.run.Status
+	switch ev.Type {
+	case agentevents.ApprovalRequired:
+		lr.pending++
+		next = StatusWaitingApproval
+	case agentevents.ApprovalDecided:
+		if lr.pending > 0 {
+			lr.pending--
+		}
+		if lr.pending == 0 {
+			next = StatusRunning
+		}
+	case agentevents.RunStatus:
+		if liveStatuses[ev.Status] {
+			next = ev.Status
+		}
+	case agentevents.CheckResult:
+		next = StatusRunning
+	case agentevents.RunOutcome:
+		if finalOutcomes[ev.Status] {
+			lr.outcome = ev.Status
+		}
+		return
+	default:
+		return
+	}
+	if next != lr.run.Status && liveStatuses[next] {
+		lr.run.Status = next
+		_, _ = l.db.Exec(`UPDATE runs SET status = ? WHERE id = ? AND ended_at IS NULL`, next, lr.run.ID)
+	}
 }
 
 // Cancel stops a live run (its context is cancelled; the caller that runs it

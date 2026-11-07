@@ -33,6 +33,15 @@ const (
 	// SkillActivated: the agent read a catalogued skill (Phase 2). Label
 	// is the skill name; SkillHash pins which SKILL.md it read.
 	SkillActivated Type = "skill_activated"
+	// Run state machine (Phase 3). RunStatus marks a live transition
+	// (Status: running, waiting_approval, verifying). CheckResult is one
+	// completion-check attempt (Label: the command, Status: passed or
+	// failed, Output: an excerpt). RunOutcome is how the run itself ended
+	// (Status: completed, partial, done or failed; Text: why), which the
+	// log records as the run's final status.
+	RunStatus   Type = "run_status"
+	CheckResult Type = "check_result"
+	RunOutcome  Type = "run_outcome"
 )
 
 // MaxOutput caps a tool_end output excerpt so one event stays small; the full

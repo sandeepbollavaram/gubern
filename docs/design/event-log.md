@@ -23,9 +23,18 @@ and are not recorded.
 `internal/eventlog` writes to `events.db`. The file sits beside the other
 stores, is created 0600, and uses versioned migrations.
 
-- `runs`: `id` (`r-` + 16 hex), session, principal, status (`running`,
-  `done`, `cancelled`, `failed`, `interrupted`), start and end times,
-  `last_seq`, idempotency key.
+- `runs`: `id` (`r-` + 16 hex), session, principal, status, start and end
+  times, `last_seq`, idempotency key. Status follows the Phase 3 state machine:
+  - **Live:** `running`, then `waiting_approval` while an approval is open,
+    and `verifying` while the completion check runs.
+  - **Final:** one of these:
+    - `completed`: its check passed;
+    - `partial`: the check still failed, or the run hit its budget;
+    - `done`: it finished with no check, so nothing was verified;
+    - `failed`, `cancelled`, or `interrupted`.
+  - **How the final status is set:** the run reports it with a
+    `run_outcome` event. A cancellation overrides it. Each check attempt is a
+    `check_result` event, and live transitions are `run_status` events.
 - `events`: the run, `seq` (unique per run, starting at 1, gap-free), type,
   time, and the event JSON after redaction.
 
@@ -82,8 +91,8 @@ depth, not a guarantee: a secret in an unrecognised shape can still pass.
   context. An `/agent` run stops at its next step, and its open approval is
   cancelled. A plain chat answer finishes its current generation, and the
   run is still recorded as `cancelled`.
-- **Restart:** runs still `running` are marked `interrupted` on the next
-  start.
+- **Restart:** runs still live (`running`, `waiting_approval`,
+  `verifying`) are marked `interrupted` on the next start.
 - **Retention:** runs that ended more than `GUBERN_EVENT_RETENTION` ago
   (default 7 days) are deleted with their events.
 
