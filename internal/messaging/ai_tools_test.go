@@ -94,12 +94,13 @@ func TestChatWithTools_Anthropic(t *testing.T) {
 		res.ToolCalls[0].ID != "toolu_1" || res.ToolCalls[0].Arguments["path"] != "go.mod" || res.Tokens != 15 {
 		t.Fatalf("result = %+v", res)
 	}
-	if req["system"] != "sys" {
-		t.Errorf("system = %v", req["system"])
+	sys := req["system"].([]any)[0].(map[string]any)
+	if sys["text"] != "sys" || sys["cache_control"].(map[string]any)["type"] != "ephemeral" {
+		t.Errorf("system = %v; want a cached text block", req["system"])
 	}
 	tool := req["tools"].([]any)[0].(map[string]any)
-	if tool["input_schema"] == nil {
-		t.Errorf("Anthropic tools need input_schema: %v", tool)
+	if tool["input_schema"] == nil || tool["cache_control"] == nil {
+		t.Errorf("Anthropic tools need input_schema, and the last one a cache breakpoint: %v", tool)
 	}
 	msgs := req["messages"].([]any)
 	asst := msgs[1].(map[string]any)["content"].([]any)[0].(map[string]any)
@@ -110,6 +111,36 @@ func TestChatWithTools_Anthropic(t *testing.T) {
 	block := result["content"].([]any)[0].(map[string]any)
 	if result["role"] != "user" || block["type"] != "tool_result" || block["tool_use_id"] != "call_1" {
 		t.Errorf("tool result must be a user turn with a tool_result block: %v", result)
+	}
+	// The newest turn carries the conversation's cache breakpoint; earlier
+	// turns don't (four breakpoints at most).
+	if block["cache_control"] == nil {
+		t.Errorf("newest turn has no cache breakpoint: %v", block)
+	}
+	if first := msgs[0].(map[string]any); first["cache_control"] != nil {
+		t.Errorf("an earlier turn got a breakpoint: %v", first)
+	}
+}
+
+// TestChatWithTools_AnthropicCountsCachedTokens: cached input is cheaper but
+// still processed, so it counts toward the run's token budget.
+func TestChatWithTools_AnthropicCountsCachedTokens(t *testing.T) {
+	var req map[string]any
+	srv := fakeProvider(t, `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":3,"cache_creation_input_tokens":100,"cache_read_input_tokens":900}}`, &req)
+	g := toolGateway(t, AIProvider{Name: ProviderClaude, APIKey: "k", Endpoint: srv.URL, Models: []string{"claude-x"}})
+	res, err := g.ChatWithTools(context.Background(), "", []ChatMessage{{Role: "user", Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Tokens != 1008 {
+		t.Errorf("tokens = %d, want 1008", res.Tokens)
+	}
+	if _, hasSystem := req["system"]; hasSystem {
+		t.Error("empty system prompt was sent")
+	}
+	first := req["messages"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+	if first["text"] != "hi" || first["cache_control"] == nil {
+		t.Errorf("a plain-text last turn becomes a cached text block: %v", first)
 	}
 }
 

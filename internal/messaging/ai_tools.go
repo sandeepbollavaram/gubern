@@ -281,15 +281,36 @@ func (g *AIGateway) toolsAnthropic(ctx context.Context, p AIProvider, model, sys
 			amsgs = append(amsgs, map[string]any{"role": m.Role, "content": m.Content})
 		}
 	}
+	// Prompt caching: an agent loop resends the same tools, system prompt
+	// and growing conversation every turn. Cache breakpoints on the last
+	// tool (tools + system are the stable prefix), the system prompt, and
+	// the newest turn let each request re-read the earlier ones from cache
+	// (Anthropic allows four; prefixes under the model's minimum are simply
+	// not cached).
+	ephemeral := map[string]any{"type": "ephemeral"}
+	if n := len(amsgs); n > 0 {
+		last := amsgs[n-1]
+		switch c := last["content"].(type) {
+		case string:
+			if c != "" {
+				last["content"] = []map[string]any{{"type": "text", "text": c, "cache_control": ephemeral}}
+			}
+		case []map[string]any:
+			if len(c) > 0 {
+				c[len(c)-1]["cache_control"] = ephemeral
+			}
+		}
+	}
 	payload := map[string]any{"model": model, "max_tokens": 4096, "messages": amsgs}
 	if system != "" {
-		payload["system"] = system
+		payload["system"] = []map[string]any{{"type": "text", "text": system, "cache_control": ephemeral}}
 	}
 	if len(tools) > 0 {
 		at := make([]map[string]any, 0, len(tools))
 		for _, t := range tools {
 			at = append(at, map[string]any{"name": t.Name, "description": t.Description, "input_schema": t.Parameters})
 		}
+		at[len(at)-1]["cache_control"] = ephemeral
 		payload["tools"] = at
 	}
 	var out struct {
@@ -302,15 +323,20 @@ func (g *AIGateway) toolsAnthropic(ctx context.Context, p AIProvider, model, sys
 		} `json:"content"`
 		StopReason string `json:"stop_reason"`
 		Usage      struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
+			InputTokens         int `json:"input_tokens"`
+			OutputTokens        int `json:"output_tokens"`
+			CacheCreationTokens int `json:"cache_creation_input_tokens"`
+			CacheReadTokens     int `json:"cache_read_input_tokens"`
 		} `json:"usage"`
 	}
 	if _, err := g.doJSON(ctx, base+"/v1/messages",
 		map[string]string{"x-api-key": p.APIKey, "anthropic-version": "2023-06-01"}, payload, &out); err != nil {
 		return ToolChatResult{}, fmt.Errorf("claude: %w", err)
 	}
-	res := ToolChatResult{Stop: out.StopReason, Tokens: out.Usage.InputTokens + out.Usage.OutputTokens}
+	// Cached input still counts toward the run's token budget: it is input
+	// the model processed, only cheaper.
+	u := out.Usage
+	res := ToolChatResult{Stop: out.StopReason, Tokens: u.InputTokens + u.OutputTokens + u.CacheCreationTokens + u.CacheReadTokens}
 	var text []string
 	for _, b := range out.Content {
 		switch b.Type {
