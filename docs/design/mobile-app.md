@@ -135,7 +135,7 @@ What else applies to devices:
 - **Real devices:** run pairing, approval and revocation on a physical
   Android phone (StrongBox and non-StrongBox) and a physical iPhone. The
   native key code (`DeviceKeyPlugin.kt`, the Swift plugin in
-  `AppDelegate.swift`) cannot be exercised by the unit tests.
+  `AppDelegate.swift`) cannot be exercised by the unit tests. The Android debug APK builds (so the Kotlin plugin compiles); the iOS project needs a Mac to build.
 - **TLS on the management API** (G-D2), so pinning protects real traffic.
 - **Signing:** an app signing configuration (the debug key is used now), a
   store listing and a privacy review.
