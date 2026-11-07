@@ -130,10 +130,27 @@ What else applies to devices:
 | Server step-up: Ed25519 and P-256, missing, replay, reject-signature, cross-approval, foreign key, expiry, legacy route | `internal/api/stepup_test.go` | pass |
 | Real server: phone approves a real run with a P-256 signature; revoked phone gets 401 | `integration/stepup_test.go` | pass |
 
-## 7. Before any release
+## 7. Emulator run (2026-11-07)
 
-- **Real devices:** run pairing, approval and revocation on a physical
-  Android phone (StrongBox and non-StrongBox) and a physical iPhone. The
+On the Android emulator (Pixel 9 Pro image, a test PIN as the screen lock),
+against a local Gubern server:
+
+1. **Paired** by pasting the link. The unencrypted-connection warning was
+   shown and confirmed. The Keystore created a P-256 key, registered as a
+   91-byte SubjectPublicKeyInfo.
+2. **Saw** a real `/agent` run's high-risk approval in "Needs you", with
+   its details, fingerprint and countdown.
+3. **Approved** with two taps. Android showed its secure credential prompt
+   (screenshots are blanked, as expected); the PIN was entered.
+4. **The signature from the Keystore key was accepted.** The run executed
+   and finished, and the approval was recorded as `owner` via `mobile`.
+5. **Revoked** the device on the server. The app wiped its credential and
+   returned to the pairing screen.
+
+## 8. Before any release
+
+- **Real devices:** the flow works on an Android emulator (§7). Still run
+  pairing, approval and revocation on a physical Android phone (StrongBox and non-StrongBox) and a physical iPhone. The
   native key code (`DeviceKeyPlugin.kt`, the Swift plugin in
   `AppDelegate.swift`) cannot be exercised by the unit tests. The Android debug APK builds (so the Kotlin plugin compiles); the iOS project needs a Mac to build.
 - **TLS on the management API** (G-D2), so pinning protects real traffic.
