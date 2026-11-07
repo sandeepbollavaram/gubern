@@ -24,6 +24,7 @@ func newSkillsCommand() *cobra.Command {
 		Short: "Inspect the Agent Skills /agent can use",
 	}
 	c.AddCommand(newSkillsListCommand())
+	c.AddCommand(newSkillsInstallCommand())
 	return c
 }
 

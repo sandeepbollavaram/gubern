@@ -109,6 +109,18 @@ lists, symlinked files, files over 256 KiB) are skipped with a warning in the
 log. Skills are re-read on every run. `gubern skills list` (or `--dir <workspace>`)
 shows which ones load and why any are skipped.
 
+Admins can switch a skill off without deleting it (dashboard **Skills**, or
+`POST /api/skills/{name}/disable`); it is then left out of what the model is
+shown. To add a skill from elsewhere, run
+`gubern skills install <folder | https://host/repo.git@<full commit>>` (or
+use **Install skill** in the dashboard). The server copies it into
+quarantine and fingerprints every file. It then opens a HIGH RISK approval
+listing them, which you can decide in the dashboard, in chat, or on a paired
+phone with step-up. The skill is installed only if approved, and is pinned in
+`skills.lock`. If a pinned skill's files change later, it is flagged as
+changed and not offered until it is installed again. Add `--wait 10m` to have
+the command wait for the decision. See [api.md](api.md#skills).
+
 ### Gubern Forge — autonomous app builds
 
 Forge builds complete apps (and Android APKs) from a prompt, in a sandbox, and
