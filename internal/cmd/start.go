@@ -649,6 +649,15 @@ func runStart(ctx context.Context, pidfile string) error {
 	}
 	apiSrv.SetApprovals(approvalSvc)
 	mgr.OnShutdown("approvals", func(context.Context) error { return approvalSvc.Close() })
+	// Run event log (milestone D): structured streams are recorded, redacted,
+	// and resumable.
+	eventLog, err := openEventLog(keyStorePath, log)
+	if err != nil {
+		display.StepFail("Event log", err.Error())
+		return fmt.Errorf("initialising event log: %w", err)
+	}
+	apiSrv.SetEventLog(eventLog)
+	mgr.OnShutdown("eventlog", func(context.Context) error { return eventLog.Close() })
 	display.Step("Authentication", fmt.Sprintf("enabled, %d key(s)", keyStore.Count()))
 	mgr.OnShutdown("apikeys", func(context.Context) error {
 		if err := keyStore.Save(keyStorePath); err != nil {

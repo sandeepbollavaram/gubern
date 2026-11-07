@@ -141,6 +141,11 @@ func (s *Server) handleAgentSubmit(w http.ResponseWriter, r *http.Request) {
 	// ?events=1 with Accept: text/event-stream asks for the structured event
 	// stream (dashboard, mobile app): text, tool steps and approvals on one
 	// ordered channel. Without it the classic chunk stream is unchanged.
+	// With the event log, the structured stream is a recorded, resumable run.
+	if s.events != nil && wantsSSE(r) && r.URL.Query().Get("events") == "1" {
+		s.submitLoggedRun(w, r, req.Message, req.SessionID)
+		return
+	}
 	ctx := r.Context()
 	var evCh chan agentevents.Event
 	if wantsSSE(r) && r.URL.Query().Get("events") == "1" {

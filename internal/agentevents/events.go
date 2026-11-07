@@ -27,6 +27,9 @@ const (
 	ApprovalRequired Type = "approval_required"
 	ApprovalDecided  Type = "approval_decided"
 	Status           Type = "status"
+	// Run lifecycle (milestone D event log).
+	RunStarted  Type = "run_started"
+	RunFinished Type = "run_finished"
 )
 
 // MaxOutput caps a tool_end output excerpt so one event stays small; the full

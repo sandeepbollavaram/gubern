@@ -478,3 +478,34 @@ func TestKeyIssuance_NoEscalation(t *testing.T) {
 		t.Error("revoked key still bound")
 	}
 }
+
+// TestMe_ReportsPrincipalAndScopes: /api/me needs only authentication, and
+// reports exactly the caller's grants.
+func TestMe_ReportsPrincipalAndScopes(t *testing.T) {
+	f := newAuthzFixture(t)
+	pid, viewer := f.principal(t, authz.Person, "viewer")
+	rec := f.do(http.MethodGet, "/api/me", viewer, "")
+	var me struct {
+		PrincipalID string   `json:"principal_id"`
+		Kind        string   `json:"kind"`
+		Scopes      []string `json:"scopes"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &me)
+	if rec.Code != http.StatusOK || me.PrincipalID != pid || me.Kind != "person" {
+		t.Fatalf("me = %d %s", rec.Code, rec.Body)
+	}
+	joined := strings.Join(me.Scopes, ",")
+	if !strings.Contains(joined, "sessions:read") || strings.Contains(joined, "approvals:decide") || strings.Contains(joined, "agents:run") {
+		t.Errorf("viewer scopes = %v", me.Scopes)
+	}
+	// A principal with no grants still learns who it is (and that it holds nothing).
+	p, _ := f.st.CreatePrincipal("", authz.Service, "empty", "test")
+	k, secret, _ := f.keys.Issue(p.ID, "default", nil, "empty", 0)
+	_ = f.st.BindCredential(k.ID, p.ID, "test")
+	if rec := f.do(http.MethodGet, "/api/me", secret, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scopes":[]`) {
+		t.Errorf("no-grant principal = %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(http.MethodGet, "/api/me", "", ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous = %d", rec.Code)
+	}
+}

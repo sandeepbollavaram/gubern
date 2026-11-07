@@ -21,6 +21,7 @@ import (
 	"github.com/sandeepbollavaram/vortex/internal/auth"
 	"github.com/sandeepbollavaram/vortex/internal/config"
 	"github.com/sandeepbollavaram/vortex/internal/dashboard"
+	"github.com/sandeepbollavaram/vortex/internal/eventlog"
 	"github.com/sandeepbollavaram/vortex/internal/identity"
 	proxyhttp "github.com/sandeepbollavaram/vortex/internal/proxy/http"
 	"github.com/sandeepbollavaram/vortex/internal/security"
@@ -57,6 +58,10 @@ type Server struct {
 	authMW func(http.Handler) http.Handler
 	keys   *auth.APIKeyStore
 	rbac   *auth.RBAC
+	// events is the persisted run event log (milestone D); nil keeps the
+	// unrecorded structured stream. sseHeartbeat paces stream heartbeats.
+	events       *eventlog.Log
+	sseHeartbeat time.Duration
 	// approvalStore reads the persistent approval service (milestone B).
 	approvalStore ApprovalStore
 	// identity maps credentials to principals and holds grants and
@@ -394,6 +399,7 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 		// GUBERN_TRUST_LOOPBACK=false so a loopback RemoteAddr does not bypass
 		// control-plane auth (production audit M1).
 		trustLoopback: loopbackTrustEnabled(),
+		sseHeartbeat:  sseHeartbeatInterval(),
 	}
 	mux := http.NewServeMux()
 	// Public endpoints — liveness/readiness must never require auth.
@@ -448,6 +454,12 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "POST /api/agents/approve", http.HandlerFunc(s.handleAgentApprove))
 	s.route(mux, "GET /api/agents/pending", http.HandlerFunc(s.handleAgentPending))
 	s.route(mux, "GET /api/attention", http.HandlerFunc(s.handleAttention))
+	s.route(mux, "GET /api/me", http.HandlerFunc(s.handleMe))
+	s.route(mux, "GET /api/runs", http.HandlerFunc(s.handleRunsList))
+	s.route(mux, "GET /api/runs/{id}", http.HandlerFunc(s.handleRunGet))
+	s.route(mux, "GET /api/runs/{id}/events", http.HandlerFunc(s.handleRunEvents))
+	s.route(mux, "POST /api/runs/{id}/cancel", http.HandlerFunc(s.handleRunCancel))
+	s.route(mux, "GET /api/activity", http.HandlerFunc(s.handleActivity))
 	s.route(mux, "GET /api/approvals", http.HandlerFunc(s.handleApprovalsList))
 	s.route(mux, "GET /api/approvals/{id}", http.HandlerFunc(s.handleApprovalGet))
 	s.route(mux, "POST /api/approvals/{id}/decision", http.HandlerFunc(s.handleApprovalDecision))

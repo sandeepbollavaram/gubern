@@ -29,6 +29,9 @@ import (
 // A route registered without an entry panics at construction; a test checks
 // the table has no stale entries.
 var routeScopes = map[string]authz.Scope{
+	// Authentication only: any active principal may ask who it is.
+	"GET /api/me": scopeAuthenticated,
+
 	"POST /internal/reload":   authz.SystemManage,
 	"POST /internal/shutdown": authz.SystemManage,
 	"GET /metrics":            authz.SystemRead,
@@ -78,6 +81,11 @@ var routeScopes = map[string]authz.Scope{
 	"GET /api/agents/team/{id}/messages": authz.SessionsRead,
 	"POST /api/agents/{id}/chat":         authz.AgentsRun,
 
+	"GET /api/runs":                      authz.SessionsRead,
+	"GET /api/runs/{id}":                 authz.SessionsRead,
+	"GET /api/runs/{id}/events":          authz.SessionsRead,
+	"POST /api/runs/{id}/cancel":         authz.AgentsRun,
+	"GET /api/activity":                  authz.SessionsRead,
 	"GET /api/approvals":                 authz.ApprovalsRead,
 	"GET /api/approvals/{id}":            authz.ApprovalsRead,
 	"POST /api/approvals/{id}/decision":  authz.ApprovalsDecide,
@@ -94,6 +102,10 @@ var routeScopes = map[string]authz.Scope{
 	"POST /v1/chat/completions":  authz.ModelsUse,
 	"POST /v1/responses":         authz.ModelsUse,
 }
+
+// scopeAuthenticated marks a route that needs an authenticated, active
+// principal and no particular scope (GET /api/me only).
+const scopeAuthenticated authz.Scope = ""
 
 // loopbackRoutes are the routes a trusted loopback caller may use without a
 // credential: exactly the ones loopback trust reached before milestone A
@@ -172,6 +184,10 @@ func (s *Server) authorizeWith(scope authz.Scope, allowLoopback bool, h http.Han
 			sub, status, reason := s.resolveSubject(r)
 			if sub == nil {
 				s.deny(w, r, status, scope, reason, "")
+				return
+			}
+			if scope == scopeAuthenticated {
+				s.keyLimit(h).ServeHTTP(w, r.WithContext(withSubject(r.Context(), sub)))
 				return
 			}
 			if d := authz.Decide(sub, scope, nil, time.Now()); !d.Allow {
