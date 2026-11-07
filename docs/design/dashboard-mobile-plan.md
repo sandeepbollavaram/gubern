@@ -176,20 +176,36 @@ Every step lands with:
 - **CI green** before anything is pushed. Pushing `dev/dashboard-v2` and any
   merge need your go-ahead.
 
-## 7. Order of work
+## 7. Order of work (approved milestones)
 
-| # | Step | Depends on |
-|---|---|---|
-| 1 | Structured agent events + pending approvals endpoint | — |
-| 2 | Shared approval (first decision wins, any channel) | 1 |
-| 3 | Session metadata, questions API, attention feed, live updates | 1 |
-| 4 | Dashboard `httpClient` + sign-in; mock behind `?mock=1` | 1–3 |
-| 5 | Phase 1 gaps 1–8 against real data | 4 |
-| 6 | Pairing core: codes, confirm, device keys, Devices screen | 4 |
-| 7 | Telegram and WhatsApp pairing | 6 |
-| 8 | Discord channel + pairing | 6 |
-| 9 | Mobile app MVP (Expo) | 6 |
-| 10 | Mobile layout for the web dashboard, Playwright E2E | 5 |
+Approved by the founder on 2026-11-07, after review of the security
+requirements (approvals, events, devices, remote access, mobile UX,
+observability, tests, discipline). It replaces the earlier 10-step order.
+Steps 1–3 of that order already exist as **unpushed foundations**:
 
-Steps 1–4 make the dashboard real; that comes first because nothing else
-matters while the screens show simulated data.
+- `80f75fc`: structured events and the pending list;
+- `592b33b`: cross-channel approval, in memory;
+- `4d4a240`: the attention feed.
+
+They are kept as they are and reworked by milestones A, B and D. None of them
+may ship before A.
+
+| Milestone | Scope | Depends on | Acceptance gate (all required) |
+|---|---|---|---|
+| **A** | Identity model (person, service principal, external identity, device, credential, permission grant) and permission scopes. Resolve N6; every protected route has an explicit, scope-gated rule. | — | Default-deny; one authorization registry; every route in the matrix; resource ownership enforced; a valid key alone grants nothing broad; a viewer can't approve; legacy keys not silently promoted; owner recovery tested; N6 regressions pass through real HTTP |
+| **B** | Persistent Approval Service: full SHA-256 of canonical action parameters, atomic single-use first-decision-wins, expiry, approver identity, audit, restart handling. One service for dashboard, Telegram, WhatsApp, Discord and mobile; no channel has a separate privileged path. | A | Simultaneous decisions, expiry, modified-action replay and restart-during-approval tests pass against a real server |
+| **C** | Integration harness against a real Gubern server with a deterministic fake AI provider. **Started alongside A** and extended by every later milestone. | — (grows with each) | Real server starts with isolated state; no commercial AI calls; clean teardown; mock dashboard mode kept for UI tests |
+| **D** | Persisted, redacted event log; SSE with stable event IDs, per-run sequence numbers, `Last-Event-ID` replay, heartbeats, cancellation, duplicate handling; activity timeline. Redaction happens before persistence. | A, B | Disconnect and recovery tests pass; no secrets in payloads; old chunk stream unchanged |
+| **E** | Scope-aware dashboard connected to the real server (replaces the mock client; the mock stays behind `?mock=1`). | A, B, D | Phase 1 flows work against a real server; UI hides what scopes forbid, and the backend enforces it regardless |
+| **F** | Devices and pairing: hashed single-use short-lived codes bound to identity and permissions, device keys, rotation, last seen, revocation, pairing audit; Telegram and WhatsApp pairing with channel-specific identity checks. | A, B, C | QR replay, expired code, code guessing, device revocation and cross-channel identity-conflict tests pass |
+| **G** | Remote-access design document **only** (LAN; private VPN such as Tailscale or WireGuard; relay and edge options assessed). No infrastructure change. | A | Document reviewed by the founder |
+| **H** | Mobile app: OS secure credential storage, TLS fingerprint pinning, verifiable signed step-up (hardware-backed device key + server challenge), approval detail UX. | A, B, D, F | Credential revocation, fingerprint mismatch and step-up tests pass; no production release until pairing, storage and revocation are verified |
+| **I** | Discord integration. | B (shared approvals), F | Same identity and approval tests as the other channels |
+
+**Discipline:**
+
+- No push, merge, publish, release or external infrastructure change
+  without the founder's explicit authorization.
+- The engineering checkpoint lives at `.vortex-ops/gubern-dashboard-v2/` and
+  is updated after every milestone.
+- Permanent architecture records live in `docs/design/`.
