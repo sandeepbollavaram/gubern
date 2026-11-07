@@ -63,7 +63,32 @@ type LoopConfig struct {
 	MaxCallsPerTurn int
 	// Emit, when set, receives progress lines (tool starts/results).
 	Emit func(string)
+	// Checkpoint, when set, receives the run's progress after every step
+	// (Phase 3): once at the start, after each model reply (before any of
+	// its tool calls run, so an interrupted call is known to have been
+	// asked for), and after each tool result.
+	Checkpoint func(LoopState)
+	// Resume continues an interrupted run from its last checkpoint instead
+	// of starting from the request. Tool results already recorded are
+	// never re-run. A call that was asked for but has no result was in
+	// flight when the run stopped: a read-only one runs again; one with
+	// side effects does not, and the model is told its outcome is unknown,
+	// so a side effect happens at most once.
+	Resume *LoopState
 }
+
+// LoopState is a run's progress: the conversation so far and its counters.
+type LoopState struct {
+	Messages []llm.ChatMessage `json:"messages"`
+	Turns    int               `json:"turns"`
+	Tokens   int               `json:"tokens"`
+	Checks   int               `json:"checks"`
+}
+
+// unknownOutcome is what the model is told about a side-effecting call that
+// was in flight when the run stopped.
+const unknownOutcome = "outcome unknown: the run was interrupted while this action was running, so it may or may not " +
+	"have taken effect. Check the current state before doing it again."
 
 // LoopStop says why a run ended.
 type LoopStop string
@@ -144,12 +169,26 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 		}
 	}
 
-	first := request
-	if cfg.Reference != "" {
-		first = cfg.Reference + "\n\n" + request
-	}
-	msgs := []llm.ChatMessage{{Role: "user", Content: first}}
+	var msgs []llm.ChatMessage
 	var res LoopResult
+	save := func() {
+		if cfg.Checkpoint != nil {
+			cfg.Checkpoint(LoopState{Messages: append([]llm.ChatMessage(nil), msgs...), Turns: res.Turns, Tokens: res.Tokens, Checks: res.Checks})
+		}
+	}
+	if cfg.Resume != nil && len(cfg.Resume.Messages) > 0 {
+		msgs = append(msgs, cfg.Resume.Messages...)
+		res.Turns, res.Tokens, res.Checks = cfg.Resume.Turns, cfg.Resume.Tokens, cfg.Resume.Checks
+		emit("↻ Resuming the interrupted run")
+		msgs = finishInterruptedCalls(ctx, cfg, specs, msgs, &res, emit, save)
+	} else {
+		first := request
+		if cfg.Reference != "" {
+			first = cfg.Reference + "\n\n" + request
+		}
+		msgs = []llm.ChatMessage{{Role: "user", Content: first}}
+		save()
+	}
 	for res.Turns < cfg.MaxSteps {
 		if ctx.Err() != nil {
 			res.Stop, res.Err = ctxStop(ctx), ctx.Err()
@@ -183,6 +222,7 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 				llm.ChatMessage{Role: "assistant", Content: reply.Text},
 				llm.ChatMessage{Role: "user", Content: "The completion check failed, so the task is not done. Its output:\n" +
 					boundObservation(output, cfg.MaxObservation) + "\nFix the problem, then reply when done."})
+			save()
 			continue
 		}
 		if cfg.MaxTokens > 0 && res.Tokens >= cfg.MaxTokens {
@@ -192,6 +232,7 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 			return res
 		}
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: reply.Text, ToolCalls: reply.ToolCalls})
+		save() // write-ahead: the calls are recorded before any runs
 		for i, call := range reply.ToolCalls {
 			var step LoopStep
 			if i >= cfg.MaxCallsPerTurn {
@@ -205,11 +246,55 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 				Role: "tool", ToolCallID: call.ID, ToolName: call.Name,
 				Content: boundObservation(step.Observed, cfg.MaxObservation),
 			})
+			save()
 		}
 	}
 	res.Stop = LoopBudgetExceeded
 	res.Err = fmt.Errorf("agents: step budget of %d model turns reached", cfg.MaxSteps)
 	return res
+}
+
+// finishInterruptedCalls completes the last model turn of a resumed run: any
+// call it asked for that has no recorded result was in flight when the run
+// stopped. Read-only calls run again; calls with side effects are answered
+// "outcome unknown" and never repeated.
+func finishInterruptedCalls(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec, msgs []llm.ChatMessage,
+	res *LoopResult, emit func(string), save func()) []llm.ChatMessage {
+	last := -1
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "assistant" {
+			last = i
+			break
+		}
+	}
+	if last < 0 || len(msgs[last].ToolCalls) == 0 {
+		return msgs
+	}
+	answered := map[string]bool{}
+	for _, m := range msgs[last+1:] {
+		if m.Role == "tool" {
+			answered[m.ToolCallID] = true
+		}
+	}
+	for _, call := range msgs[last].ToolCalls {
+		if answered[call.ID] {
+			continue
+		}
+		var step LoopStep
+		spec, known := specs[call.Name]
+		if known && spec.Risk == RiskRead && !spec.SideEffect {
+			step = runLoopCall(ctx, cfg, specs, call, emit)
+		} else {
+			step = LoopStep{Tool: call.Name, Args: call.Arguments, Outcome: "unknown", Observed: unknownOutcome}
+			emit("⚠ " + call.Name + " was running when the run stopped; its outcome is unknown and it was not repeated")
+			loopAudit(ctx, cfg, "agent.action.unknown_outcome", call.Name, map[string]any{"reason": "interrupted"})
+		}
+		res.Steps = append(res.Steps, step)
+		msgs = append(msgs, llm.ChatMessage{Role: "tool", ToolCallID: call.ID, ToolName: call.Name,
+			Content: boundObservation(step.Observed, cfg.MaxObservation)})
+		save()
+	}
+	return msgs
 }
 
 // runLoopCall validates, gates and executes one proposed tool call. Every
