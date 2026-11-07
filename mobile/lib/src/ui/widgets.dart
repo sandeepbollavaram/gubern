@@ -963,5 +963,6 @@ IconData toolIcon(String tool) => switch (tool) {
   'git_commit' || 'git_add' || 'git_push' => Icons.commit_rounded,
   'web_search' || 'web_fetch' || 'research' => Icons.travel_explore_rounded,
   'devops' => Icons.dns_outlined,
+  'skill_install' => Icons.menu_book_outlined,
   _ => Icons.extension_outlined,
 };

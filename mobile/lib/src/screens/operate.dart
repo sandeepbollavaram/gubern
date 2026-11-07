@@ -441,12 +441,26 @@ class _SkillsPanel extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Pill(label: s.enabled ? 'On' : 'Off', color: s.enabled ? g.ok : g.muted),
+                        if (s.pinned && !s.tampered) ...[
+                          Tooltip(message: 'Approved and pinned', child: Icon(Icons.verified_user_outlined, size: 16, color: g.ok)),
+                          const SizedBox(width: 6),
+                        ],
+                        s.tampered
+                            ? Pill(label: 'Changed', color: g.critical, icon: Icons.gpp_maybe_outlined)
+                            : Pill(label: s.enabled ? 'On' : 'Off', color: s.enabled ? g.ok : g.muted),
                       ],
                     ),
                   ),
                 const SizedBox(height: 4),
-                Text('Skills are switched on or off in the dashboard. They never grant permissions.', style: TextStyle(color: g.muted, fontSize: 12)),
+                if (skills.any((s) => s.tampered)) ...[
+                  Notice(
+                    text: 'A pinned skill changed after it was approved, so agents aren\'t shown it. Reinstall it from the dashboard to approve the new version.',
+                    color: g.critical,
+                    icon: Icons.gpp_maybe_outlined,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Text('Skills are switched on or installed from the dashboard; installs arrive here as approvals. They never grant permissions.', style: TextStyle(color: g.muted, fontSize: 12)),
               ],
             ),
     );

@@ -330,10 +330,12 @@ class SkillInfo {
       path = j['path'] as String? ?? '',
       hash = j['hash'] as String? ?? '',
       allowedTools = [for (final t in (j['allowed_tools'] as List? ?? const [])) '$t'],
-      enabled = j['enabled'] as bool? ?? true;
+      enabled = j['enabled'] as bool? ?? true,
+      pinned = j['pinned'] as bool? ?? false,
+      tampered = j['tampered'] as bool? ?? false;
   final String name, description, scope, path, hash;
   final List<String> allowedTools;
-  final bool enabled;
+  final bool enabled, pinned, tampered;
 }
 
 class RunInfo {
