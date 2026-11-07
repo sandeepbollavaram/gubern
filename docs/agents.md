@@ -121,6 +121,21 @@ phone with step-up. The skill is installed only if approved, and is pinned in
 changed and not offered until it is installed again. Add `--wait 10m` to have
 the command wait for the decision. See [api.md](api.md#skills).
 
+To see whether a skill helps, give it eval tasks (`evals.json` in the skill,
+or the path in `agents/gubern.yaml`):
+
+```json
+{"tasks": [{"name": "changelog", "task": "write the changelog entry for this release", "check": "grep -q Unreleased CHANGELOG.md"}]}
+```
+
+`gubern skills eval <name> [--runs 3]` runs each task as an `/agent` run with
+that completion check, with the skill on and then off, and prints the pass
+rates. The tasks really run in the server's workspace, so use a throwaway
+one. The runner approves only the declared check command in its own eval
+sessions and rejects anything else, so a task needing other approvals simply
+fails. The skill's on/off state is restored afterwards. The result is only
+as meaningful as the model the server uses.
+
 ### Gubern Forge — autonomous app builds
 
 Forge builds complete apps (and Android APKs) from a prompt, in a sandbox, and

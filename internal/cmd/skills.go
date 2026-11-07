@@ -25,6 +25,7 @@ func newSkillsCommand() *cobra.Command {
 	}
 	c.AddCommand(newSkillsListCommand())
 	c.AddCommand(newSkillsInstallCommand())
+	c.AddCommand(newSkillsEvalCommand())
 	return c
 }
 
