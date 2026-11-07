@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowDown, ChevronDown, Download, ListChecks, Pencil, Pin, Trash2 } from "lucide-react";
+import { ArrowDown, BookOpen, ChevronDown, Download, ListChecks, Pencil, Pin, Trash2 } from "lucide-react";
 import { client, useCan, useIsRunning, usePlan, useQuestions, useSessions, useTranscript } from "../../data/client";
 import type { TranscriptItem, ViewMode } from "../../data/model";
 import { useUIStore } from "../../store";
@@ -36,6 +36,13 @@ function Item({ item, viewMode, highlightApproval }: { item: TranscriptItem; vie
       );
     case "tools":
       return <ToolGroup tool={item.tool} steps={item.steps} viewMode={viewMode} />;
+    case "skill":
+      return (
+        <p className="inline-flex items-center gap-1.5 rounded-full bg-ai/15 px-2.5 py-0.5 text-[12px] font-medium text-ai-foreground" title={item.hash ? `SKILL.md ${item.hash.slice(0, 16)}` : undefined}>
+          <BookOpen className="h-3.5 w-3.5" aria-hidden />
+          Using skill <span className="font-mono">{item.name}</span>
+        </p>
+      );
     case "approval":
       return <ApprovalCard approvalId={item.approvalId} highlight={item.approvalId === highlightApproval} />;
     case "status":

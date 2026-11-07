@@ -13,6 +13,7 @@ const Home = lazy(() => import("./features/home/Home").then((m) => ({ default: m
 const ChatPage = lazy(() => import("./features/chat/ChatPage").then((m) => ({ default: m.ChatPage })));
 const Inbox = lazy(() => import("./features/inbox/Inbox").then((m) => ({ default: m.Inbox })));
 const Outputs = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Outputs })));
+const Skills = lazy(() => import("./features/library/Skills").then((m) => ({ default: m.Skills })));
 const Automations = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Automations })));
 
 // Existing pages, now placed in the new information architecture (§3).
@@ -71,6 +72,7 @@ export default function App() {
             <Route path="inbox" element={<Inbox />} />
             <Route path="outputs" element={<Outputs />} />
             <Route path="automations" element={<Automations />} />
+            <Route path="skills" element={<Skills />} />
             <Route path="workspaces" element={legacy("Workspaces", "Namespaces and the folders agents may work in.", <Namespaces />)} />
 
             <Route path="operate">

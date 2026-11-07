@@ -3,6 +3,7 @@ import { NavLink, useMatch, useNavigate } from "react-router";
 import {
   Activity,
   Blocks,
+  BookOpen,
   ChevronDown,
   FolderKanban,
   HeartPulse,
@@ -284,6 +285,7 @@ export function Rail() {
         <NavItem to="/workspaces" icon={FolderKanban} label="Workspaces" collapsed={collapsed} />
         <NavItem to="/outputs" icon={Sparkles} label="Outputs" collapsed={collapsed} />
         <NavItem to="/automations" icon={Timer} label="Automations" collapsed={collapsed} />
+        <NavItem to="/skills" icon={BookOpen} label="Skills" collapsed={collapsed} />
 
         <Group label="Operate" collapsed={collapsed}>
           <NavItem to="/operate" end icon={LayoutDashboard} label="Overview" collapsed={collapsed} />

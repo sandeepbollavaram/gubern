@@ -11,6 +11,8 @@ import type {
   Identity,
   ModelInfo,
   Output,
+  Skill,
+  SkillList,
   Risk,
   SendOptions,
   SessionSummary,
@@ -67,8 +69,33 @@ export interface WireEvent {
   decided_via?: string;
   decided_by?: string;
   text?: string;
+  skill_hash?: string;
   at?: number;
 }
+
+interface WireSkill {
+  name: string;
+  description: string;
+  scope: string;
+  path: string;
+  hash: string;
+  license?: string;
+  compatibility?: string;
+  allowed_tools?: string[];
+  enabled: boolean;
+}
+
+const skillFromWire = (s: WireSkill): Skill => ({
+  name: s.name,
+  description: s.description,
+  scope: s.scope,
+  path: s.path,
+  hash: s.hash,
+  license: s.license,
+  compatibility: s.compatibility,
+  allowedTools: s.allowed_tools ?? [],
+  enabled: s.enabled,
+});
 
 interface WireRun {
   id: string;
@@ -322,6 +349,22 @@ class HttpClient implements GubernClient {
     return [st.working_dir || "default"];
   };
 
+  skills = async (): Promise<SkillList> => {
+    const b = await apiJSON<{ skills: WireSkill[]; problems: { path: string; error: string }[] }>("/api/skills");
+    return { skills: b.skills.map(skillFromWire), problems: b.problems ?? [] };
+  };
+
+  skill = async (name: string) => {
+    const b = await apiJSON<{ skill: WireSkill; body: string }>(`/api/skills/${encodeURIComponent(name)}`);
+    return { skill: skillFromWire(b.skill), body: b.body };
+  };
+
+  setSkillEnabled = async (name: string, enabled: boolean): Promise<Skill> => {
+    const b = await apiJSON<{ skill: WireSkill }>(`/api/skills/${encodeURIComponent(name)}/${enabled ? "enable" : "disable"}`, { method: "POST" });
+    this.changed();
+    return skillFromWire(b.skill);
+  };
+
   // ---- live views ----
   transcript = (sid: string): TranscriptItem[] => {
     if (!this.hydrated.has(sid)) {
@@ -424,6 +467,10 @@ class HttpClient implements GubernClient {
           items[i] = { ...it, steps };
           break;
         }
+        break;
+      }
+      case "skill_activated": {
+        if (ev.label) items.push({ kind: "skill", id: this.localId("sk"), name: ev.label, hash: ev.skill_hash ?? "" });
         break;
       }
       case "approval_required": {

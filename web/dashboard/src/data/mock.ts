@@ -13,6 +13,7 @@ import type {
   RunPlan,
   SendOptions,
   SessionSummary,
+  Skill,
   SystemSummary,
   TranscriptItem,
   ToolStep,
@@ -478,6 +479,28 @@ function attentionItems(): AttentionItem[] {
   return items.sort((a, b) => order[a.severity] - order[b.severity] || b.at - a.at);
 }
 
+const mockSkills: Skill[] = [
+  {
+    name: "gubern-dev-checks",
+    description: "How to check a change to the Gubern codebase before calling it done: formatting, vet, unit tests, the integration suite, and the dashboard.",
+    scope: "project",
+    path: ".agents/skills/gubern-dev-checks/SKILL.md",
+    hash: "204ed8d9f93f8283d47e53b7bd4e2cefa80467372b89627cee3d490aaafa6aff",
+    license: "Apache-2.0",
+    allowedTools: ["run_terminal", "read_file"],
+    enabled: true,
+  },
+  {
+    name: "gubern-release-check",
+    description: "Pre-release checklist: changelog, version bump, signed tags and the release workflow.",
+    scope: "project",
+    path: ".agents/skills/gubern-release-check/SKILL.md",
+    hash: "ef8d729ffae4b1c0d2e3f405162738495a6b7c8d9e0f1a2b3c4d5e6f708192a3",
+    allowedTools: [],
+    enabled: false,
+  },
+];
+
 export const mockClient: GubernClient = {
   whoami: () => delay<Identity>({ name: "admin", role: "admin", local: true }),
   summary: () =>
@@ -501,6 +524,23 @@ export const mockClient: GubernClient = {
       { id: "llama3.1:8b", label: "Llama 3.1 8B", purpose: "Runs locally through Ollama; no cost", provider: "Ollama" },
     ]),
   workspaces: () => delay(["~/gubern", "~/projects/app", "~/projects/site"]),
+  skills: () => delay({ skills: [...mockSkills], problems: [{ path: ".agents/skills/draft/SKILL.md", error: "frontmatter: name is required" }] }),
+  skill: (name) => {
+    const s = mockSkills.find((x) => x.name === name);
+    return s ? delay({ skill: s, body: `# ${s.name}
+
+${s.description}
+
+1. Read the change.
+2. Run the checks.` }) : Promise.reject(new Error("skill not found"));
+  },
+  setSkillEnabled: (name, enabled) => {
+    const i = mockSkills.findIndex((x) => x.name === name);
+    if (i < 0) return Promise.reject(new Error("skill not found"));
+    mockSkills[i] = { ...mockSkills[i], enabled };
+    emit();
+    return delay(mockSkills[i]);
+  },
 
   transcript: (id) => state.transcripts[id] ?? EMPTY,
   approval: (id) => state.approvals[id],

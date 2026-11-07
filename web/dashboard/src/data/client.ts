@@ -36,6 +36,9 @@ export const useAttention = () => useQuery({ queryKey: [KEY, "attention"], query
 export const useOutputs = () => useQuery({ queryKey: [KEY, "outputs"], queryFn: client.outputs });
 export const useModels = () => useQuery({ queryKey: [KEY, "models"], queryFn: client.models, staleTime: Infinity });
 export const useWorkspaces = () => useQuery({ queryKey: [KEY, "workspaces"], queryFn: client.workspaces, staleTime: 60_000 });
+export const useSkills = () => useQuery({ queryKey: [KEY, "skills"], queryFn: client.skills });
+export const useSkill = (name: string | undefined) =>
+  useQuery({ queryKey: [KEY, "skill", name], queryFn: () => client.skill(name!), enabled: !!name });
 
 // Live views read synchronous snapshots and re-render on every change.
 function useLive<T>(get: () => T): T {

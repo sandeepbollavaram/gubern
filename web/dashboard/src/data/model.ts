@@ -72,11 +72,35 @@ export interface Approval {
   decidedAt?: number;
 }
 
+/** An Agent Skill (SKILL.md) in the workspace; knowledge, never a grant. */
+export interface Skill {
+  name: string;
+  description: string;
+  /** Where it was found: "project" or "user". */
+  scope: string;
+  /** SKILL.md path, relative to the workspace. */
+  path: string;
+  /** SHA-256 of SKILL.md. */
+  hash: string;
+  license?: string;
+  compatibility?: string;
+  /** Tools the skill asks for; policy may narrow them, never widen. */
+  allowedTools: string[];
+  enabled: boolean;
+}
+
+export interface SkillList {
+  skills: Skill[];
+  /** Skills that failed to load, with the reason. */
+  problems: { path: string; error: string }[];
+}
+
 export type TranscriptItem =
   | { kind: "user"; id: string; text: string; at: number; queued?: boolean }
   | { kind: "assistant"; id: string; text: string; at: number; streaming?: boolean }
   | { kind: "tools"; id: string; tool: string; steps: ToolStep[] }
   | { kind: "approval"; id: string; approvalId: string }
+  | { kind: "skill"; id: string; name: string; hash: string }
   | { kind: "status"; id: string; text: string; tone: "ai" | "warning" | "danger" }
   | { kind: "answers"; id: string; pairs: { label: string; value: string }[] };
 
@@ -158,6 +182,9 @@ export interface GubernClient {
   outputs(): Promise<Output[]>;
   models(): Promise<ModelInfo[]>;
   workspaces(): Promise<string[]>;
+  skills(): Promise<SkillList>;
+  skill(name: string): Promise<{ skill: Skill; body: string }>;
+  setSkillEnabled(name: string, enabled: boolean): Promise<Skill>;
 
   /** Live views: synchronous snapshot plus change subscription. */
   transcript(sessionId: string): TranscriptItem[];
