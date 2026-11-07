@@ -151,3 +151,22 @@ func TestSkillsBackend_RejectedInstallLeavesNothing(t *testing.T) {
 		t.Errorf("unpinned git source = %v, want ErrInstallInput", err)
 	}
 }
+
+func TestSkillsBackend_Sidecar(t *testing.T) {
+	ws := t.TempDir()
+	writeSkill(t, ws, "notes", "Take notes.")
+	dir := filepath.Join(ws, ".agents", "skills", "notes", "agents")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gubern.yaml"), []byte("display_name: Meeting notes\nevals: evals.json\ntags: docs\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	list, _, err := newSkillsBackend(ws, t.TempDir(), nil, nil, nil).List()
+	if err != nil || len(list) != 1 {
+		t.Fatal(list, err)
+	}
+	if s := list[0]; s.DisplayName != "Meeting notes" || s.Evals != "evals.json" || len(s.Tags) != 1 || s.SidecarError != "" {
+		t.Errorf("info = %+v", s)
+	}
+}

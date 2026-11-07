@@ -71,7 +71,8 @@ func (b skillsBackend) discover() (discovered, error) {
 
 func (b skillsBackend) info(s agentskills.Skill, d discovered) api.SkillInfo {
 	e, pinned := d.lock[filepath.Clean(s.Dir)]
-	return api.SkillInfo{
+	sc, _, scErr := agentskills.ReadSidecar(s.Dir)
+	info := api.SkillInfo{
 		Name:          s.Name,
 		Description:   s.Description,
 		Scope:         s.Scope,
@@ -84,7 +85,14 @@ func (b skillsBackend) info(s agentskills.Skill, d discovered) api.SkillInfo {
 		Pinned:        pinned,
 		Tampered:      d.tampered[s.Name],
 		Source:        e.Source,
+		DisplayName:   sc.DisplayName,
+		Tags:          sc.Tags,
+		Evals:         sc.Evals,
 	}
+	if scErr != nil {
+		info.SidecarError = scErr.Error()
+	}
+	return info
 }
 
 // rel shows a path relative to the workspace, so the API doesn't leak the

@@ -99,7 +99,12 @@ POST /api/skills/{name}/enable    (system:manage) → {"skill":{...,"enabled":tr
 ```
 
 A skill is `{name, description, scope, path, hash, license?, compatibility?,
-allowed_tools?, enabled}`. `path` is relative to the workspace and `hash` is
+allowed_tools?, enabled, display_name?, tags?, evals?, sidecar_error?}`. The
+last four come from an optional Gubern sidecar, `<skill>/agents/gubern.yaml`
+(`display_name`, `evals`: a path inside the skill, `tags`: comma-separated).
+SKILL.md itself stays the open format; the sidecar can't grant tools or
+change risk, and unknown keys or an `evals` path outside the skill are
+reported in `sidecar_error`. `path` is relative to the workspace and `hash` is
 the SHA-256 of its `SKILL.md`. A disabled skill stays on disk but is left out
 of the catalog the model sees. The switches are kept in
 `<user config>/gubern/skills-state.json`, and each change is audit-logged as

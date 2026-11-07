@@ -35,6 +35,11 @@ type SkillInfo struct {
 	Pinned   bool   `json:"pinned,omitempty"`
 	Tampered bool   `json:"tampered,omitempty"`
 	Source   string `json:"source,omitempty"`
+	// From the Gubern sidecar (agents/gubern.yaml), when the skill has one.
+	DisplayName  string   `json:"display_name,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
+	Evals        string   `json:"evals,omitempty"`
+	SidecarError string   `json:"sidecar_error,omitempty"`
 }
 
 // SkillFile is one file of a skill being installed.
