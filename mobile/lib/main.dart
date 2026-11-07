@@ -6,6 +6,8 @@ import 'src/api.dart';
 import 'src/app_screens.dart';
 import 'src/credential_store.dart';
 import 'src/stepup.dart';
+import 'src/ui/brand.dart';
+import 'src/ui/theme.dart';
 
 // Gubern mobile (milestone H, docs/design/mobile-app.md): pair with a
 // Gubern server, follow pending approvals, and approve with the phone's
@@ -48,16 +50,18 @@ class _GubernAppState extends State<GubernApp> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF378ADD));
     return MaterialApp(
       title: 'Gubern',
-      theme: ThemeData(colorScheme: scheme, useMaterial3: true),
-      darkTheme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF378ADD), brightness: Brightness.dark), useMaterial3: true),
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      // Dark-first command-center look; light is kept for later.
+      themeMode: ThemeMode.dark,
       home: _loading
-          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          ? const Scaffold(body: Center(child: GubernMark(size: 56, glow: true)))
           : _api == null
-              ? PairScreen(store: widget.store, deviceKey: widget.deviceKey, onPaired: _paired)
-              : ApprovalsScreen(api: _api!, deviceKey: widget.deviceKey, onUnpaired: _unpaired),
+          ? PairScreen(store: widget.store, deviceKey: widget.deviceKey, onPaired: _paired)
+          : ApprovalsScreen(api: _api!, deviceKey: widget.deviceKey, onUnpaired: _unpaired),
     );
   }
 }

@@ -6,13 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// acts as the person within the pairing's scope ceiling, and approving also
 /// needs the hardware key, so the secret alone can't approve anything.
 class Credentials {
-  Credentials({
-    required this.server,
-    required this.deviceId,
-    required this.secret,
-    this.fingerprint,
-    this.principalId,
-  });
+  Credentials({required this.server, required this.deviceId, required this.secret, this.fingerprint, this.principalId});
 
   final Uri server;
   final String deviceId;
@@ -21,20 +15,20 @@ class Credentials {
   final String? principalId;
 
   Map<String, dynamic> toJson() => {
-        'server': server.toString(),
-        'device_id': deviceId,
-        'secret': secret,
-        'fingerprint': fingerprint,
-        'principal_id': principalId,
-      };
+    'server': server.toString(),
+    'device_id': deviceId,
+    'secret': secret,
+    'fingerprint': fingerprint,
+    'principal_id': principalId,
+  };
 
   static Credentials fromJson(Map<String, dynamic> j) => Credentials(
-        server: Uri.parse(j['server'] as String),
-        deviceId: j['device_id'] as String,
-        secret: j['secret'] as String,
-        fingerprint: j['fingerprint'] as String?,
-        principalId: j['principal_id'] as String?,
-      );
+    server: Uri.parse(j['server'] as String),
+    deviceId: j['device_id'] as String,
+    secret: j['secret'] as String,
+    fingerprint: j['fingerprint'] as String?,
+    principalId: j['principal_id'] as String?,
+  );
 }
 
 /// Secret storage the app depends on; swapped for an in-memory one in tests.
@@ -49,10 +43,10 @@ abstract class SecureStore {
 /// (never in backups or on other devices).
 class PlatformSecureStore implements SecureStore {
   PlatformSecureStore()
-      : _s = const FlutterSecureStorage(
-          aOptions: AndroidOptions(resetOnError: true),
-          iOptions: IOSOptions(accessibility: KeychainAccessibility.unlocked_this_device),
-        );
+    : _s = const FlutterSecureStorage(
+        aOptions: AndroidOptions(resetOnError: true),
+        iOptions: IOSOptions(accessibility: KeychainAccessibility.unlocked_this_device),
+      );
 
   final FlutterSecureStorage _s;
 

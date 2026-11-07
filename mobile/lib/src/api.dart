@@ -26,19 +26,19 @@ class ApiException implements Exception {
 /// One approval as the app shows it.
 class ApprovalView {
   ApprovalView.fromJson(Map<String, dynamic> j)
-      : id = j['id'] as String,
-        sessionId = j['session_id'] as String? ?? '',
-        tool = j['tool'] as String? ?? '',
-        risk = j['risk'] as String? ?? '',
-        description = j['description'] as String? ?? '',
-        command = j['command'] as String?,
-        preview = j['preview'] as String?,
-        workspace = j['workspace'] as String?,
-        actionHash = j['action_hash'] as String? ?? '',
-        status = j['status'] as String? ?? 'pending',
-        expiresAt = DateTime.tryParse(j['expires_at'] as String? ?? '') ?? DateTime.now(),
-        decidedBy = j['decided_by'] as String?,
-        decidedVia = j['decided_via'] as String?;
+    : id = j['id'] as String,
+      sessionId = j['session_id'] as String? ?? '',
+      tool = j['tool'] as String? ?? '',
+      risk = j['risk'] as String? ?? '',
+      description = j['description'] as String? ?? '',
+      command = j['command'] as String?,
+      preview = j['preview'] as String?,
+      workspace = j['workspace'] as String?,
+      actionHash = j['action_hash'] as String? ?? '',
+      status = j['status'] as String? ?? 'pending',
+      expiresAt = DateTime.tryParse(j['expires_at'] as String? ?? '') ?? DateTime.now(),
+      decidedBy = j['decided_by'] as String?,
+      decidedVia = j['decided_via'] as String?;
 
   final String id, sessionId, tool, risk, description, actionHash, status;
   final String? command, preview, workspace, decidedBy, decidedVia;
@@ -54,8 +54,7 @@ class ApprovalView {
 /// HTTP client for the Gubern API, pinned to the paired server's
 /// certificate. A 401 wipes the stored credential (credential revocation).
 class GubernApi {
-  GubernApi(this.creds, this.store, {HttpClient? client})
-      : _client = client ?? pinnedClient(creds?.fingerprint);
+  GubernApi(this.creds, this.store, {HttpClient? client}) : _client = client ?? pinnedClient(creds?.fingerprint);
 
   /// Null until paired.
   Credentials? creds;
@@ -64,12 +63,13 @@ class GubernApi {
 
   /// Pairs this phone: redeems the code with the device's public key, and
   /// stores the returned credential securely.
-  static Future<Credentials> pair(PairingLink link, DeviceKey key, CredentialStore store,
-      {required String label, HttpClient? client}) async {
+  static Future<Credentials> pair(PairingLink link, DeviceKey key, CredentialStore store, {required String label, HttpClient? client}) async {
     final api = GubernApi(null, store, client: client ?? pinnedClient(link.fingerprint));
-    final body = await api._send('POST', link.server.resolve('/api/pairing/redeem'),
-        {'code': link.code, 'label': label, 'public_key': await key.publicKey()},
-        auth: false);
+    final body = await api._send('POST', link.server.resolve('/api/pairing/redeem'), {
+      'code': link.code,
+      'label': label,
+      'public_key': await key.publicKey(),
+    }, auth: false);
     final c = Credentials(
       server: link.server,
       deviceId: body['device_id'] as String,
@@ -120,8 +120,7 @@ class GubernApi {
     return [for (final a in (body['approvals'] as List? ?? const [])) ApprovalView.fromJson(a as Map<String, dynamic>)];
   }
 
-  Future<ApprovalView> approval(String id) async =>
-      ApprovalView.fromJson(await _send('GET', _url('/api/approvals/$id'), null));
+  Future<ApprovalView> approval(String id) async => ApprovalView.fromJson(await _send('GET', _url('/api/approvals/$id'), null));
 
   /// Rejects: no step-up needed.
   Future<ApprovalView> reject(ApprovalView a) async {
