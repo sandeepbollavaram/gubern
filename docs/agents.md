@@ -288,7 +288,7 @@ agents: local_tools: sandbox: {
 | Writable | the workspace only (trusted root, else the work dir) | anything the server's user can write | anything |
 | Home folder and server state | hidden; commands get a private home that persists between commands (in the cache dir, `sandbox-home`) | visible | visible |
 | Network off | enforced (own network namespace) | **not enforced** | not enforced |
-| Process cap | yes (`prlimit`, counted in the sandbox's user namespace) | yes | no |
+| Process cap | best effort (`prlimit`; it didn't apply in 2 of ~90 test runs, cause unknown) | yes | no |
 | Memory cap | no (needs cgroups) | yes | no |
 | Whole tree dies with the command | yes (PID namespace) | yes (the job is ended when the command exits) | process group on timeout |
 

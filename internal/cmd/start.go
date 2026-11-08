@@ -1903,7 +1903,7 @@ func buildAgentRuntime(ctx context.Context, log *slog.Logger, apiAddr string, au
 	registry := agents.NewToolRegistry()
 	apiBaseURL := "http://" + apiAddr
 	bootSteps.step("agent tools")
-	if err := agents.RegisterBuiltins(registry, sandboxBase, agents.DefaultAllowedCommands, bus, apiBaseURL, "coordinator"); err != nil {
+	if err := agents.RegisterBuiltins(registry, sandboxBase, agents.DefaultAllowedCommands, bus, apiBaseURL, "coordinator", localFS.Sandbox, localFS.SandboxConfig); err != nil {
 		log.Warn("agent runtime disabled: tool registration failed", "err", err)
 		return nil
 	}

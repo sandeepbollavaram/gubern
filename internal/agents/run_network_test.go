@@ -17,6 +17,7 @@ import (
 type recordingSandbox struct {
 	mu   sync.Mutex
 	nets []string
+	dirs []string // each command's writable folder
 }
 
 func (r *recordingSandbox) Info() sandbox.Info {
@@ -27,6 +28,7 @@ func (r *recordingSandbox) Prepare(_ *exec.Cmd, p sandbox.Policy) (sandbox.Proce
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nets = append(r.nets, string(p.Network))
+	r.dirs = append(r.dirs, p.Writable)
 	return noopProcess{}, nil
 }
 

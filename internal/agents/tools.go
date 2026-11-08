@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sandeepbollavaram/vortex/internal/sandbox"
 	"github.com/sandeepbollavaram/vortex/pkg/safedial"
 )
 
@@ -454,6 +455,10 @@ func (e *ApprovalError) Unwrap() error { return ErrApprovalRequired }
 type RunCommandTool struct {
 	SandboxDir      string
 	AllowedCommands []string
+	// Sandbox, when set, runs the command inside the OS boundary (Phase 4),
+	// with SandboxDir as its only writable folder.
+	Sandbox       sandbox.Sandbox
+	SandboxConfig sandbox.Config
 	// RequireApproval, when true, makes Execute return an *ApprovalError
 	// instead of running — the coordinator routes this to a human approver
 	// (M10.7). It defaults to true via NewRunCommandTool until an OS-level
@@ -567,7 +572,9 @@ func (t RunCommandTool) Execute(ctx context.Context, params map[string]any) (any
 	stdout, stderr := newCommandBuffer(), newCommandBuffer()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	runErr := cmd.Run()
+	runErr := runContained(ctx, cmd, t.Sandbox, sandbox.Policy{
+		Writable: t.SandboxDir, Dir: t.SandboxDir, Network: t.SandboxConfig.Network, Limits: t.SandboxConfig.Limits,
+	})
 	exit := 0
 	if runErr != nil {
 		var ee *exec.ExitError
@@ -577,10 +584,15 @@ func (t RunCommandTool) Execute(ctx context.Context, params map[string]any) (any
 			return nil, runErr
 		}
 	}
+	label := "none"
+	if t.Sandbox != nil {
+		label = t.Sandbox.Info().Adapter
+	}
 	return map[string]any{
 		"stdout":    stdout.String(),
 		"stderr":    stderr.String(),
 		"exit_code": exit,
+		"sandbox":   label,
 	}, nil
 }
 
@@ -966,12 +978,15 @@ func (s *SandboxedToolRegistry) ExecuteApproved(ctx context.Context, name string
 // RegisterBuiltins populates registry with the built-in tools bound to the
 // given sandbox dir, command whitelist, bus, and management API base URL. It is
 // a convenience for wiring (used by the runtime and start.go).
-func RegisterBuiltins(registry *ToolRegistry, sandboxDir string, allowedCommands []string, bus *Bus, apiBaseURL, agentName string) error {
+// box (nil: none) is the OS sandbox run_command uses.
+func RegisterBuiltins(registry *ToolRegistry, sandboxDir string, allowedCommands []string, bus *Bus, apiBaseURL, agentName string, box sandbox.Sandbox, boxCfg sandbox.Config) error {
+	runCmd := NewRunCommandTool(sandboxDir, allowedCommands)
+	runCmd.Sandbox, runCmd.SandboxConfig = box, boxCfg
 	tools := []Tool{
 		HTTPGetTool{},
 		WriteFileTool{SandboxDir: sandboxDir},
 		ReadFileTool{SandboxDir: sandboxDir},
-		NewRunCommandTool(sandboxDir, allowedCommands),
+		runCmd,
 		VortexAPITool{BaseURL: apiBaseURL},
 		SendMessageTool{Bus: bus, From: agentName},
 		// LSP diagnostics (M20): read-only code intelligence. The sandbox dir is

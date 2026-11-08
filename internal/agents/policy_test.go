@@ -173,14 +173,14 @@ func TestPolicy_CoversSubAgentTools(t *testing.T) {
 		t.Fatalf("sub-agent tool names rejected: %v", err)
 	}
 	reg := NewToolRegistry()
-	sandbox := t.TempDir()
-	if err := RegisterBuiltins(reg, sandbox, []string{"go"}, nil, "http://127.0.0.1:1", "test"); err != nil {
+	sbDir := t.TempDir()
+	if err := RegisterBuiltins(reg, sbDir, []string{"go"}, nil, "http://127.0.0.1:1", "test", nil, RunCommandTool{}.SandboxConfig); err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.ApplyPolicy(ToolPolicy{Deny: []string{"http_get"}, Ask: []string{"run_command"}}); err != nil {
 		t.Fatal(err)
 	}
-	sb := NewSandboxedRegistry(reg, sandbox, []string{"go"}, nil)
+	sb := NewSandboxedRegistry(reg, sbDir, []string{"go"}, nil)
 	ctx := context.Background()
 	if _, err := sb.Execute(ctx, "http_get", map[string]any{"url": "https://example.com"}); !errors.Is(err, ErrToolDenied) {
 		t.Errorf("denied http_get: err = %v", err)

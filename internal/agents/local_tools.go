@@ -429,32 +429,8 @@ func (t RunTerminalTool) Execute(ctx context.Context, params map[string]any) (an
 	stdout, stderr := newCommandBuffer(), newCommandBuffer()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	var box sandbox.Process
-	if t.cfg.Sandbox != nil {
-		policy := t.cfg.sandboxPolicy(resolvedCwd)
-		// The network this run was granted (M.4); only the coordinator sets
-		// it, after an approval when it widens the server's default.
-		if n := agentevents.NetworkFrom(ctx); n == string(sandbox.NetworkOn) || n == string(sandbox.NetworkOff) {
-			policy.Network = sandbox.Network(n)
-		}
-		if box, err = t.cfg.Sandbox.Prepare(cmd, policy); err != nil {
-			return nil, err
-		}
-		defer box.Close()
-		cmd.Cancel = func() error { box.Kill(); killProcessTree(cmd); return nil }
-	}
 	start := time.Now()
-	runErr := cmd.Start()
-	if runErr == nil && box != nil {
-		if err := box.Started(cmd); err != nil {
-			killProcessTree(cmd)
-			_ = cmd.Wait()
-			return nil, err
-		}
-	}
-	if runErr == nil {
-		runErr = cmd.Wait()
-	}
+	runErr := runContained(ctx, cmd, t.cfg.Sandbox, t.cfg.sandboxPolicy(resolvedCwd))
 	exit := 0
 	if runErr != nil {
 		var ee *exec.ExitError
@@ -471,6 +447,35 @@ func (t RunTerminalTool) Execute(ctx context.Context, params map[string]any) (an
 		"exit_code": exit, "duration_ms": time.Since(start).Milliseconds(),
 		"sandbox": t.sandboxLabel(),
 	}, nil
+}
+
+// runContained runs cmd, inside box when there is one (Phase 4), and waits
+// for it. Both run_terminal and run_command go through it, so a command
+// gets the same boundary whichever tool started it. The network is the one
+// the run was granted (M.4): only the coordinator sets it, after an approval
+// when it widens the server's default.
+func runContained(ctx context.Context, cmd *exec.Cmd, box sandbox.Sandbox, p sandbox.Policy) error {
+	if box == nil {
+		return cmd.Run()
+	}
+	if n := agentevents.NetworkFrom(ctx); n == string(sandbox.NetworkOn) || n == string(sandbox.NetworkOff) {
+		p.Network = sandbox.Network(n)
+	}
+	proc, err := box.Prepare(cmd, p)
+	if err != nil {
+		return err
+	}
+	defer proc.Close()
+	cmd.Cancel = func() error { proc.Kill(); killProcessTree(cmd); return nil }
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if err := proc.Started(cmd); err != nil {
+		killProcessTree(cmd)
+		_ = cmd.Wait()
+		return err
+	}
+	return cmd.Wait()
 }
 
 // sandboxLabel names the boundary a command ran in, for the run record.

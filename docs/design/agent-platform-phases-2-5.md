@@ -466,8 +466,17 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **Live check found a bug:** Windows reported its network as "on", so the server thought network policy was enforceable there. A run asking for network off was told "loopback only" while it still had the network. Fixed: Windows always reports "not enforced", and the live run now says so.
 - **Default:** still "on". Flipping it to "off" is a product decision: it would make every Linux run without an approval offline.
 
+**M.5: `run_command` in the sandbox. Done.**
+- Background sub-agents' `run_command` now goes through the same sandbox as `run_terminal`, via one shared `runContained`. Its folder is the only writable one, and it gets the run's granted network.
+- **Tests:** a recording-sandbox test (writable folder, granted vs. default network), plus a run of `go version` under the real job object. Both pass on Windows. On Linux they skip, because WSL has no Go installed.
+- **Found while testing:** the Linux fork-bomb test failed again. The prlimit cap didn't apply in **2 of about 90 runs**, letting all 200 processes start.
+  - It didn't reproduce in 40 runs of the test alone, 15 full-suite runs, or 3 runs from a cold WSL start.
+  - The cap is now reported as "best effort", and cgroups `pids.max` is the planned fix.
+- **Environment gap:** `TestRunCommand_EnvironmentIsScrubbed` fails in WSL only because Go isn't installed there; it runs `go env`.
+
 **Next: the rest of M.** Remaining:
-- wrapping `run_command` (sub-agents) and Forge builds;
+- a reliable Linux process cap (cgroups `pids.max`);
+- wrapping Forge builds;
 - the AppContainer spike (Windows file and network fence).
 
 Then Phase 5: N (MCP client and connectors).

@@ -69,7 +69,10 @@ func (b *bwrap) Info() Info {
 		in.Enforced = append(in.Enforced, "no network (loopback only)")
 	}
 	if b.prlimit != "" {
-		in.Enforced = append(in.Enforced, "at most "+strconv.Itoa(b.cfg.MaxProcesses)+" processes")
+		// RLIMIT_NPROC via prlimit: in the escape suite the cap didn't apply
+		// in 2 of about 90 runs (not reproducible on demand), so it isn't
+		// claimed as enforced. cgroups pids.max is the reliable fix.
+		in.Enforced = append(in.Enforced, "at most "+strconv.Itoa(b.cfg.MaxProcesses)+" processes (best effort)")
 	} else {
 		in.NotEnforced = append(in.NotEnforced, "process cap (prlimit is not installed)")
 	}
