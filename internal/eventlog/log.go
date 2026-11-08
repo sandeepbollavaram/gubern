@@ -126,7 +126,7 @@ CREATE TABLE events (
 	UNIQUE (run_id, seq)
 );
 CREATE INDEX events_type_at ON events(type, at);
-`}
+`, checkpointMigration}
 
 // Open opens (creating if needed) the log at path. Runs a previous process
 // left running are marked interrupted, and expired events are pruned.

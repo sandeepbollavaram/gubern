@@ -93,6 +93,21 @@ depth, not a guarantee: a secret in an unrecognised shape can still pass.
   run is still recorded as `cancelled`.
 - **Restart:** runs still live (`running`, `waiting_approval`,
   `verifying`) are marked `interrupted` on the next start.
+- **Resume (Phase 3):** an `/agent` run saves a checkpoint after every step
+  in `checkpoints`. The checkpoint holds the conversation, the counters, and
+  which calls of the current turn began executing; each is written before the
+  thing it records happens. `POST /api/runs/{id}/resume` (`agents:run`, same
+  session access as cancel) continues an `interrupted` run as a new run in the
+  same session:
+  - Results already recorded are reused, never re-run.
+  - A call that never began (say, one waiting for an approval) is asked for
+    again.
+  - A read-only call that was in flight runs again.
+  - A side-effecting call that had begun is not repeated. The model is told
+    its outcome is unknown, and the audit log records
+    `agent.action.unknown_outcome`.
+  - A run can be resumed once (`409 already resumed`). The resume is audited
+    as `run.resumed`.
 - **Retention:** runs that ended more than `GUBERN_EVENT_RETENTION` ago
   (default 7 days) are deleted with their events.
 

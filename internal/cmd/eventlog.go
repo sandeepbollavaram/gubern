@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/sandeepbollavaram/vortex/internal/agents"
 	"github.com/sandeepbollavaram/vortex/internal/eventlog"
 )
 
@@ -34,4 +36,24 @@ func envDuration(log *slog.Logger, name string, lo, hi time.Duration) time.Durat
 		return 0
 	}
 	return d
+}
+
+// runCheckpoints stores /agent run checkpoints in the event log (Phase 3).
+type runCheckpoints struct{ log *eventlog.Log }
+
+func (c runCheckpoints) SaveCheckpoint(runID string, cp agents.RunCheckpoint) error {
+	b, err := json.Marshal(cp)
+	if err != nil {
+		return err
+	}
+	return c.log.SaveCheckpoint(runID, b)
+}
+
+func (c runCheckpoints) LoadCheckpoint(runID string) (agents.RunCheckpoint, error) {
+	b, _, err := c.log.Checkpoint(runID)
+	if err != nil {
+		return agents.RunCheckpoint{}, err
+	}
+	var cp agents.RunCheckpoint
+	return cp, json.Unmarshal(b, &cp)
 }

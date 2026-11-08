@@ -30,15 +30,18 @@ func TestLoop_CheckpointsAreWriteAhead(t *testing.T) {
 	}}
 	var states []LoopState
 	RunLoop(context.Background(), LoopConfig{Model: m, Tools: reg, Checkpoint: func(s LoopState) { states = append(states, s) }}, "look")
-	if len(states) != 3 {
-		t.Fatalf("checkpoints = %d, want 3 (start, call asked, result)", len(states))
+	if len(states) != 4 {
+		t.Fatalf("checkpoints = %d, want 4 (start, call asked, call started, result)", len(states))
 	}
 	ahead := states[1].Messages[len(states[1].Messages)-1]
-	if ahead.Role != "assistant" || len(ahead.ToolCalls) != 1 || states[1].Turns != 1 {
-		t.Errorf("second checkpoint should end with the asked-for call: %+v", states[1])
+	if ahead.Role != "assistant" || len(ahead.ToolCalls) != 1 || states[1].Turns != 1 || len(states[1].Started) != 0 {
+		t.Errorf("second checkpoint should end with the asked-for call, not yet started: %+v", states[1])
 	}
-	if last := states[2].Messages[len(states[2].Messages)-1]; last.Role != "tool" || last.ToolCallID != "c1" {
-		t.Errorf("third checkpoint should end with the result: %+v", last)
+	if st := states[2]; len(st.Started) != 1 || st.Started[0] != "c1" || st.Messages[len(st.Messages)-1].Role != "assistant" {
+		t.Errorf("third checkpoint should mark c1 started before its result: %+v", st)
+	}
+	if last := states[3].Messages[len(states[3].Messages)-1]; last.Role != "tool" || last.ToolCallID != "c1" {
+		t.Errorf("fourth checkpoint should end with the result: %+v", last)
 	}
 }
 
@@ -51,7 +54,7 @@ func TestLoop_ResumeNeverRepeatsASideEffect(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved := LoopState{
-		Turns: 2, Tokens: 40,
+		Turns: 2, Tokens: 40, Started: []string{"b"}, // b began executing; c is read-only
 		Messages: []llm.ChatMessage{
 			{Role: "user", Content: "do it"},
 			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "a", Name: "read_file", Arguments: map[string]any{"path": "seen.txt"}}}},
@@ -96,5 +99,23 @@ func TestLoop_ResumeNeverRepeatsASideEffect(t *testing.T) {
 	}
 	if sent[2].Content != "x (recorded)" {
 		t.Error("a recorded result was replaced")
+	}
+}
+
+// TestLoop_ResumeRunsACallThatNeverStarted: a write that was still waiting
+// for its approval when the run stopped never ran, so on resume it is asked
+// for again and runs once approved.
+func TestLoop_ResumeRunsACallThatNeverStarted(t *testing.T) {
+	reg, dir := resumeRegistry(t)
+	saved := LoopState{Turns: 1, Messages: []llm.ChatMessage{
+		{Role: "user", Content: "write it"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "w", Name: "write_file", Arguments: map[string]any{"path": "late.txt", "content": "ok"}}}},
+	}}
+	approvals := 0
+	m := &scriptedModel{replies: []llm.ToolChatResult{{Text: "written"}}}
+	RunLoop(context.Background(), LoopConfig{Model: m, Tools: reg, Resume: &saved,
+		Approval: func(context.Context, ApprovalRequest) bool { approvals++; return true }}, "")
+	if b, err := os.ReadFile(filepath.Join(dir, "late.txt")); err != nil || string(b) != "ok" || approvals != 1 {
+		t.Errorf("file=%q err=%v approvals=%d; want written once after one approval", b, err, approvals)
 	}
 }

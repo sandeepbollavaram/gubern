@@ -482,6 +482,7 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "GET /api/runs", http.HandlerFunc(s.handleRunsList))
 	s.route(mux, "GET /api/runs/{id}", http.HandlerFunc(s.handleRunGet))
 	s.route(mux, "GET /api/runs/{id}/events", http.HandlerFunc(s.handleRunEvents))
+	s.route(mux, "POST /api/runs/{id}/resume", http.HandlerFunc(s.handleRunResume))
 	s.route(mux, "POST /api/runs/{id}/cancel", http.HandlerFunc(s.handleRunCancel))
 	s.route(mux, "GET /api/activity", http.HandlerFunc(s.handleActivity))
 	s.route(mux, "GET /api/approvals", http.HandlerFunc(s.handleApprovalsList))

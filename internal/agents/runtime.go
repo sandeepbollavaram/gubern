@@ -148,8 +148,9 @@ func (r *Runtime) Submit(ctx context.Context, userMsg, sessionID string) (<-chan
 		mctx, cancel := context.WithCancel(r.ctx)
 		defer cancel()
 		// mctx derives from the runtime's context, so carry the caller's
-		// event sink (dashboard/app SSE) across explicitly.
-		mctx = agentevents.WithSink(mctx, agentevents.SinkFrom(ctx))
+		// event sink (dashboard/app SSE), run id and resume request across
+		// explicitly.
+		mctx = agentevents.CarryRun(mctx, ctx)
 		go func() {
 			select {
 			case <-ctx.Done():

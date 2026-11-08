@@ -234,6 +234,7 @@ type Coordinator struct {
 	cfg CoordinatorConfig
 
 	mu            sync.Mutex
+	checkpoints   RunCheckpointStore // nil: /agent runs are not checkpointed
 	active        map[string]Agent
 	pending       map[string]*pendingApproval // session → action awaiting approval
 	sessions      map[string]*SessionState    // session → conversation state
@@ -2277,6 +2278,34 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		emit("ℹ Read-only run: the model can read and search, not change files or run commands.")
 	}
 	runID := newRunID()
+	// A run recorded in the event log is checkpointed under its log id, and
+	// may continue an interrupted run (the API sets both in the context
+	// after checking access; message text can't).
+	var resume *LoopState
+	var checkpoint func(LoopState)
+	if logID := agentevents.RunIDFrom(ctx); logID != "" {
+		runID = logID
+		if store := c.runCheckpoints(); store != nil {
+			if from := agentevents.ResumeFrom(ctx); from != "" {
+				cp, err := store.LoadCheckpoint(from)
+				if err != nil {
+					return "Can't resume that run: " + err.Error(), nil
+				}
+				if cp.Session != sessionID || cp.Task != task || cp.Check != check || cp.ReadOnly != flags.readOnly {
+					return "Can't resume that run: " + ErrResumeMismatch.Error(), nil
+				}
+				st := cp.State
+				resume = &st
+			}
+			base := RunCheckpoint{Session: sessionID, Task: task, Check: check, ReadOnly: flags.readOnly}
+			checkpoint = func(st LoopState) {
+				base.State = st
+				if err := store.SaveCheckpoint(runID, base); err != nil {
+					slog.Warn("saving the run checkpoint failed", "run", runID, "error", err)
+				}
+			}
+		}
+	}
 	c.auditRunStarted(ctx, sessionID, runID, task, check, flags.readOnly)
 	catalog, skillFiles := c.skillCatalog()
 	approver := c.loopApprover(sessionID, emit)
@@ -2312,8 +2341,10 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		Session:    sessionID,
 		Timeout:    AgentRunTimeout - 5*time.Second,
 		// A runaway run stops here rather than at the gateway's daily cap.
-		MaxTokens: 250_000,
-		Emit:      emit,
+		MaxTokens:  250_000,
+		Emit:       emit,
+		Checkpoint: checkpoint,
+		Resume:     resume,
 	}, task)
 	c.auditRun(ctx, sessionID, runID, task, check, res)
 	if outcome, why := runOutcome(res); outcome != "" {

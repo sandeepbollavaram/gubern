@@ -1080,6 +1080,7 @@ func runStart(ctx context.Context, pidfile string) error {
 	agentRuntime := buildAgentRuntime(ctx, log, apiSrv.Addr(), auditLog, gateway, msg.approvalFn, forgeBuildApp(forgeJobs), workDir, localFS, clarifying, pending, researchFn, devopsFn, pipelineFn, orchestrateFn)
 	if agentRuntime != nil {
 		agentRuntime.Coordinator().SetApprovals(approvalSvc)
+		agentRuntime.Coordinator().SetRunCheckpoints(runCheckpoints{log: eventLog})
 		wireChannelApprovals(approvalSvc, agentRuntime, &msg, log)
 		adapter := &agentRuntimeAdapter{rt: agentRuntime}
 		apiSrv.SetAgentRuntime(adapter)

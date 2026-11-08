@@ -83,6 +83,10 @@ type LoopState struct {
 	Turns    int               `json:"turns"`
 	Tokens   int               `json:"tokens"`
 	Checks   int               `json:"checks"`
+	// Started lists calls of the last model turn that began executing
+	// (saved before they ran). A call asked for but not started, say one
+	// still waiting for an approval, never ran and is safe to ask again.
+	Started []string `json:"started,omitempty"`
 }
 
 // unknownOutcome is what the model is told about a side-effecting call that
@@ -171,16 +175,32 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 
 	var msgs []llm.ChatMessage
 	var res LoopResult
+	var started []string
 	save := func() {
 		if cfg.Checkpoint != nil {
-			cfg.Checkpoint(LoopState{Messages: append([]llm.ChatMessage(nil), msgs...), Turns: res.Turns, Tokens: res.Tokens, Checks: res.Checks})
+			cfg.Checkpoint(LoopState{Messages: append([]llm.ChatMessage(nil), msgs...), Turns: res.Turns, Tokens: res.Tokens,
+				Checks: res.Checks, Started: append([]string(nil), started...)})
+		}
+	}
+	// onExec records, before a call executes, that it began (write-ahead);
+	// a gated call that only asked for approval is taken back off.
+	onExec := func(id string) func(bool) {
+		return func(begin bool) {
+			if begin {
+				started = append(started, id)
+			} else if n := len(started); n > 0 && started[n-1] == id {
+				started = started[:n-1]
+			}
+			save()
 		}
 	}
 	if cfg.Resume != nil && len(cfg.Resume.Messages) > 0 {
 		msgs = append(msgs, cfg.Resume.Messages...)
 		res.Turns, res.Tokens, res.Checks = cfg.Resume.Turns, cfg.Resume.Tokens, cfg.Resume.Checks
+		started = append(started, cfg.Resume.Started...)
 		emit("↻ Resuming the interrupted run")
-		msgs = finishInterruptedCalls(ctx, cfg, specs, msgs, &res, emit, save)
+		msgs = finishInterruptedCalls(ctx, cfg, specs, msgs, &res, emit, save, started, onExec)
+		started = nil
 	} else {
 		first := request
 		if cfg.Reference != "" {
@@ -232,6 +252,7 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 			return res
 		}
 		msgs = append(msgs, llm.ChatMessage{Role: "assistant", Content: reply.Text, ToolCalls: reply.ToolCalls})
+		started = nil
 		save() // write-ahead: the calls are recorded before any runs
 		for i, call := range reply.ToolCalls {
 			var step LoopStep
@@ -239,7 +260,7 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 				step = LoopStep{Tool: call.Name, Args: call.Arguments, Outcome: "skipped",
 					Observed: fmt.Sprintf("not run: at most %d tool calls per turn; call it again next turn if still needed", cfg.MaxCallsPerTurn)}
 			} else {
-				step = runLoopCall(ctx, cfg, specs, call, emit)
+				step = runLoopCall(ctx, cfg, specs, call, emit, onExec(call.ID))
 			}
 			res.Steps = append(res.Steps, step)
 			msgs = append(msgs, llm.ChatMessage{
@@ -256,10 +277,15 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 
 // finishInterruptedCalls completes the last model turn of a resumed run: any
 // call it asked for that has no recorded result was in flight when the run
-// stopped. Read-only calls run again; calls with side effects are answered
-// "outcome unknown" and never repeated.
+// stopped. Read-only calls, and calls that never began executing, run
+// (again); calls with side effects that had begun are answered "outcome
+// unknown" and never repeated.
 func finishInterruptedCalls(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec, msgs []llm.ChatMessage,
-	res *LoopResult, emit func(string), save func()) []llm.ChatMessage {
+	res *LoopResult, emit func(string), save func(), started []string, onExec func(string) func(bool)) []llm.ChatMessage {
+	began := map[string]bool{}
+	for _, id := range started {
+		began[id] = true
+	}
 	last := -1
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Role == "assistant" {
@@ -282,8 +308,10 @@ func finishInterruptedCalls(ctx context.Context, cfg LoopConfig, specs map[strin
 		}
 		var step LoopStep
 		spec, known := specs[call.Name]
-		if known && spec.Risk == RiskRead && !spec.SideEffect {
-			step = runLoopCall(ctx, cfg, specs, call, emit)
+		if (known && spec.Risk == RiskRead && !spec.SideEffect) || !began[call.ID] {
+			// Read-only, or it never began (e.g. it was waiting for an
+			// approval): safe to run, asking for any approval again.
+			step = runLoopCall(ctx, cfg, specs, call, emit, onExec(call.ID))
 		} else {
 			step = LoopStep{Tool: call.Name, Args: call.Arguments, Outcome: "unknown", Observed: unknownOutcome}
 			emit("⚠ " + call.Name + " was running when the run stopped; its outcome is unknown and it was not repeated")
@@ -299,7 +327,10 @@ func finishInterruptedCalls(ctx context.Context, cfg LoopConfig, specs map[strin
 
 // runLoopCall validates, gates and executes one proposed tool call. Every
 // failure becomes an observation the model can react to, never a crash.
-func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec, call llm.ToolCall, emit func(string)) LoopStep {
+func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec, call llm.ToolCall, emit func(string), onExec func(bool)) LoopStep {
+	if onExec == nil {
+		onExec = func(bool) {}
+	}
 	step := LoopStep{Tool: call.Name, Args: call.Arguments}
 	spec, ok := specs[call.Name]
 	if !ok {
@@ -351,9 +382,11 @@ func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec,
 	}
 
 	emit(toolStartLine(call.Name, params))
+	onExec(true)
 	out, err := tool.Execute(ctx, params)
 	var ae *ApprovalError
 	if errors.As(err, &ae) {
+		onExec(false) // it only asked for approval; nothing ran
 		loopAudit(ctx, cfg, "agent.approval.requested", call.Name, map[string]any{
 			"risk": ae.Request.Risk(), "action": truncateForAudit(ae.Request.Description), "action_id": ActionID(ae.Request),
 		})
@@ -367,6 +400,7 @@ func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec,
 			emit("✗ Action rejected")
 			return step
 		}
+		onExec(true)
 		out, err = executeApprovedLocal(ctx, tool, params)
 		loopAudit(ctx, cfg, "agent.action.executed", call.Name, map[string]any{"ok": err == nil})
 	}
