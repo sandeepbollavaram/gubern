@@ -145,7 +145,7 @@ func (b skillsBackend) SetEnabled(name string, enabled bool) error {
 // PrepareInstall fetches source into quarantine, opens a HIGH-risk approval
 // that shows exactly what would be installed, and installs only if that
 // approval is approved. It returns as soon as the approval is open.
-func (b skillsBackend) PrepareInstall(ctx context.Context, source, sessionID, requestedBy string) (api.SkillInstall, error) {
+func (b skillsBackend) PrepareInstall(ctx context.Context, source, sessionID, _ string) (api.SkillInstall, error) {
 	if b.approvals == nil || b.workspace == "" {
 		return api.SkillInstall{}, errors.New("skill install needs the approval service and a workspace")
 	}

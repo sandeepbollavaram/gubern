@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/sandeepbollavaram/vortex/internal/sandbox"
 )
 
 // Workspaces: the folders agent runs can work in. The server's default
@@ -41,9 +43,22 @@ type WorkspacesBackend interface {
 // SetWorkspaces wires the workspace list.
 func (s *Server) SetWorkspaces(b WorkspacesBackend) { s.workspaces = b }
 
+// SetSandboxInfo records the boundary terminal commands run in (Phase 4), so
+// the Workspaces page can say what it does and doesn't do on this server.
+func (s *Server) SetSandboxInfo(info sandbox.Info) { s.sandboxInfo = &info }
+
 func (s *Server) handleWorkspacesList(w http.ResponseWriter, _ *http.Request) {
+	body := map[string]any{"workspaces": []WorkspaceInfo{}}
+	if s.sandboxInfo != nil {
+		info := *s.sandboxInfo
+		body["sandbox"] = map[string]any{
+			"adapter": info.Adapter, "level": info.Level, "platform": info.Platform, "mode": info.Mode,
+			"network": info.Network, "enforced": info.Enforced, "not_enforced": info.NotEnforced,
+			"reason": info.Reason, "label": info.Label(),
+		}
+	}
 	if s.workspaces == nil {
-		s.writeJSON(w, http.StatusOK, map[string]any{"workspaces": []WorkspaceInfo{}})
+		s.writeJSON(w, http.StatusOK, body)
 		return
 	}
 	list, err := s.workspaces.List()
@@ -51,7 +66,8 @@ func (s *Server) handleWorkspacesList(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "listing workspaces failed", http.StatusInternalServerError)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"workspaces": list})
+	body["workspaces"] = list
+	s.writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) handleWorkspaceAdd(w http.ResponseWriter, r *http.Request) {

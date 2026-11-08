@@ -45,6 +45,7 @@ import (
 	"github.com/sandeepbollavaram/vortex/internal/proxy"
 	"github.com/sandeepbollavaram/vortex/internal/proxy/tcp"
 	"github.com/sandeepbollavaram/vortex/internal/research"
+	"github.com/sandeepbollavaram/vortex/internal/sandbox"
 	"github.com/sandeepbollavaram/vortex/internal/secrets"
 	"github.com/sandeepbollavaram/vortex/internal/security"
 	"github.com/sandeepbollavaram/vortex/internal/startup"
@@ -314,6 +315,23 @@ func resolveLocalFSConfig(cfg *config.Config, workDir string) (agents.LocalFSCon
 	}
 	fs := agents.LocalFSFromRuntime(workDir, trusted, auto)
 	fs.Policy = policy
+	sb := cfg.Agents.LocalTools.Sandbox
+	fs.SandboxConfig = sandbox.Config{
+		Mode: sandbox.Mode(sb.Mode), Network: sandbox.Network(sb.Network),
+		Limits: sandbox.Limits{MaxProcesses: sb.MaxProcesses, MemoryMB: sb.MemoryMB, ReadPaths: sb.ReadPaths,
+			// Tool caches (Go modules, npm) survive between commands without
+			// showing the command the user's real home.
+			Home: filepath.Join(userdir.App(userdir.Cache()), "sandbox-home")},
+	}
+	box, info, err := sandbox.New(fs.SandboxConfig)
+	if err != nil {
+		return agents.LocalFSConfig{}, err // "required" and no adapter: refuse to start
+	}
+	fs.Sandbox = box
+	fs.SandboxInfo = info
+	if fs.SandboxConfig.MaxProcesses <= 0 {
+		fs.SandboxConfig.MaxProcesses = sandbox.DefaultLimits.MaxProcesses
+	}
 	return fs, nil
 }
 
@@ -1079,6 +1097,12 @@ func runStart(ctx context.Context, pidfile string) error {
 	if lerr != nil {
 		display.StepFail("Configuration", lerr.Error())
 		return fmt.Errorf("config invalid, refusing to start: %w", lerr)
+	}
+	apiSrv.SetSandboxInfo(localFS.SandboxInfo)
+	if localFS.Sandbox == nil {
+		log.Warn("terminal commands are not sandboxed", "reason", localFS.SandboxInfo.Reason)
+	} else {
+		log.Info("terminal commands sandboxed", "adapter", localFS.SandboxInfo.Adapter, "level", localFS.SandboxInfo.Level, "network", localFS.SandboxInfo.Network)
 	}
 	bootSteps.step("agent runtime")
 	agentRuntime := buildAgentRuntime(ctx, log, apiSrv.Addr(), auditLog, gateway, msg.approvalFn, forgeBuildApp(forgeJobs), workDir, localFS, clarifying, pending, researchFn, devopsFn, pipelineFn, orchestrateFn)

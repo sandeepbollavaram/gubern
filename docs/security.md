@@ -205,6 +205,17 @@ commands.
   outside the FS trust boundary. If `run_terminal` is invoked with an empty cwd
   and Root would escape `trusted_root`, the tool falls back to `trusted_root`
   (approved shell is still not a full OS jail).
+- **OS sandbox for `run_terminal`** (`agents.local_tools.sandbox`, default
+  `auto`). On Linux, bubblewrap isolates each command: only the workspace is
+  writable, the home folder and server state aren't visible, it has its own
+  PID namespace, a process cap, and with `network: "off"` no network. On
+  Windows, a Job Object contains it: the whole tree dies with the command and
+  processes and memory are capped, but files and network are **not** fenced.
+  The escape suite (`internal/sandbox`, run in CI on Linux) tries writing and
+  reading outside the workspace, symlinks out, path traversal, the network
+  with it off, a fork bomb and signalling the server; each must fail, and
+  each has a control showing the same action works where it is allowed.
+  `run_command` (background sub-agents) and Forge builds are not wrapped yet.
 - The **approval gate** is the primary control for machine-touching actions —
   keep it enabled for unattended runs.
 - **Skills** (`SKILL.md` files in the workspace) are read as instructions for

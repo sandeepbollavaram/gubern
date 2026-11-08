@@ -165,8 +165,18 @@ type AgentPolicy struct {
 
 // LocalTools mirrors #LocalTools — workspace trust for coordinator local FS tools.
 type LocalTools struct {
-	TrustedRoot string `json:"trusted_root"`
-	AutoMode    bool   `json:"auto_mode"`
+	TrustedRoot string  `json:"trusted_root"`
+	AutoMode    bool    `json:"auto_mode"`
+	Sandbox     Sandbox `json:"sandbox"`
+}
+
+// Sandbox mirrors #Sandbox — the OS boundary for run_terminal commands.
+type Sandbox struct {
+	Mode         string   `json:"mode"`
+	Network      string   `json:"network"`
+	MaxProcesses int      `json:"max_processes"`
+	MemoryMB     int      `json:"memory_mb"`
+	ReadPaths    []string `json:"read_paths"`
 }
 
 // LogRotate mirrors #LogRotate.

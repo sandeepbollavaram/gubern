@@ -264,7 +264,47 @@ Auto Mode keeps the approval prompt for `gubern.cue` and for paths inside
 approved command. A custom `core.hooksPath` is not detected.
 
 Auto Mode is **not** unrestricted host access. Out-of-scope paths are denied by
-the runtime. There is still no container/namespace isolation for local tools.
+the runtime.
+
+### Sandbox for `run_terminal`
+
+`agents.local_tools.sandbox` runs each approved `run_terminal` command inside an
+operating-system boundary. What that boundary is depends on the platform, and
+`GET /api/workspaces` reports it (`sandbox.label`, `enforced`, `not_enforced`):
+
+```cue
+agents: local_tools: sandbox: {
+	mode:          "auto"   // "auto" (default), "required" (refuse to start without it), "off"
+	network:       "on"     // "off": Linux commands get loopback only
+	max_processes: 256      // processes at once (stops a fork bomb)
+	memory_mb:     8192     // the whole tree; Windows only; 0 = no cap
+	read_paths: []          // Linux: extra folders commands may read (toolchains)
+}
+```
+
+| | Linux (bubblewrap) | Windows (Job Object) | macOS |
+|---|---|---|---|
+| Label | Isolated (Linux) | Contained (Windows) | Not sandboxed |
+| Writable | the workspace only (trusted root, else the work dir) | anything the server's user can write | anything |
+| Home folder and server state | hidden; commands get a private home that persists between commands (in the cache dir, `sandbox-home`) | visible | visible |
+| Network off | enforced (own network namespace) | **not enforced** | not enforced |
+| Process cap | yes (`prlimit`, counted in the sandbox's user namespace) | yes | no |
+| Memory cap | no (needs cgroups) | yes | no |
+| Whole tree dies with the command | yes (PID namespace) | yes (the job is ended when the command exits) | process group on timeout |
+
+On Linux it needs `bwrap` (package `bubblewrap`) and unprivileged user
+namespaces; Ubuntu 24.04's AppArmor default blocks those
+(`kernel.apparmor_restrict_unprivileged_userns`), in which case `auto` runs
+unsandboxed and logs why, and `required` refuses to start. On Windows the
+command starts suspended and is assigned to its job before it runs, so nothing
+it starts escapes the job. Windows containment is not isolation: an
+AppContainer would add a file-system and network fence, and is a later step.
+
+Each `run_terminal` result records `"sandbox": "<adapter>"`. Commands run by
+background sub-agents (`run_command`) are not wrapped yet. Approval, the
+workspace check, the scrubbed environment and the process-tree kill apply
+with or without a sandbox. `GUBERN_AGENTS_LOCAL_TOOLS_SANDBOX_MODE` and
+`GUBERN_AGENTS_LOCAL_TOOLS_SANDBOX_NETWORK` override the mode and network.
 
 ### Per-tool policy
 

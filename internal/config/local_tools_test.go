@@ -195,3 +195,36 @@ func TestEnvOverrideAgentsLocalTools(t *testing.T) {
 		t.Errorf("trusted = %q, want %q", got, want)
 	}
 }
+
+// TestLoadSandboxDefaults: with no sandbox section, and with only
+// local_tools set, the sandbox is "auto" with network on and the caps set.
+func TestLoadSandboxDefaults(t *testing.T) {
+	for name, body := range map[string]string{
+		"absent":           validConfig,
+		"local_tools only": validConfig + "\nagents: local_tools: auto_mode: false\n",
+	} {
+		cfg, err := Load(writeConfig(t, body))
+		if err != nil {
+			t.Fatalf("%s: Load: %v", name, err)
+		}
+		sb := cfg.Agents.LocalTools.Sandbox
+		if sb.Mode != "auto" || sb.Network != "on" || sb.MaxProcesses != 256 || sb.MemoryMB != 8192 {
+			t.Errorf("%s: sandbox defaults = %+v", name, sb)
+		}
+	}
+}
+
+func TestLoadSandboxValidation(t *testing.T) {
+	cfg, err := Load(writeConfig(t, validConfig+"\nagents: local_tools: sandbox: {mode: \"required\", network: \"off\", max_processes: 64}\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if sb := cfg.Agents.LocalTools.Sandbox; sb.Mode != "required" || sb.Network != "off" || sb.MaxProcesses != 64 || sb.MemoryMB != 8192 {
+		t.Errorf("sandbox = %+v", sb)
+	}
+	for _, bad := range []string{`mode: "strict"`, `network: "allow"`, `max_processes: 2`} {
+		if _, err := Load(writeConfig(t, validConfig+"\nagents: local_tools: sandbox: {"+bad+"}\n")); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+}

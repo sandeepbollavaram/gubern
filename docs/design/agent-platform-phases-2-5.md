@@ -434,8 +434,23 @@ Updated 2026-11-08 04:35 IST. Local commits only.
   - restore only after a HIGH-risk approval.
 - **Live check:** a file the agent rewrote was restored to its original content, and HEAD was untouched.
 
+**M.2: sandbox adapters. Done (server).**
+- **What it does:** `agents.local_tools.sandbox` (default `auto`) wraps every approved `run_terminal` command.
+  - **Linux, bubblewrap ("Isolated").** Only the workspace is writable. Home and server state are hidden; commands get a private home that persists in the cache dir. System folders are read-only. Each command has its own PID namespace, a process cap via `prlimit`, and with `network: "off"` its own network namespace.
+  - **Windows, Job Object ("Contained").** The command starts suspended and joins its job before it runs. The job ends when the command exits, so background processes die with it. Processes and memory are capped. Files and network are not fenced, and the API says so.
+  - **Other platforms:** none, and the API says why.
+- **Visible as:** `GET /api/workspaces` returns `sandbox` (label, enforced, not enforced), and each `run_terminal` result records its adapter.
+- **Escape suite:** 8 escape tests plus a private-home test in `internal/sandbox`, each with a control. CI installs bubblewrap and runs them with `GUBERN_SANDBOX_REQUIRED=1`.
+  - **WSL Ubuntu, as an unprivileged uid:** all passed; mutation runs (network always shared; host `/tmp` exposed) failed 4 tests as they should.
+  - **One unexplained failure:** the fork-bomb test failed once in the first full run. It then passed 25 full runs in a row; the cause is not known.
+  - **Windows job tests:** pass. Removing the process cap or kill-on-close makes them fail.
+- **Live check (Windows):** `start /b ping … & echo launched`.
+  - Sandbox off: the call took 7.0s and `ping` was left running.
+  - With the job: 1.9s, and nothing left behind.
+- **Not done:** `run_command` (sub-agents) and Forge builds aren't wrapped. There is no Linux memory cap (needs cgroups), no seccomp, and no AppContainer spike yet.
+- **Network default:** stays "on" until M.4 makes it a per-run choice behind an approval; flipping it before that would break `go`/`npm` downloads silently.
+
 **Next: the rest of M.** Remaining:
-- sandbox adapters for Linux and Windows;
-- network policy per run;
-- the escape suites;
-- the Workspaces page, and diffs in run detail.
+- network policy per run (M.4);
+- the Workspaces page with the sandbox card, the run sandbox badge, and diffs in run detail;
+- the AppContainer spike.

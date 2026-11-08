@@ -18,12 +18,8 @@ package vortex
 	secrets:       #Secrets
 	observability: #Observability
 	// agents configures coordinator / local-tool behaviour (workspace trust).
-	agents: #Agents | *{
-		local_tools: {
-			trusted_root: ""
-			auto_mode:    false
-		}
-	}
+	// Every field of #Agents has a default, so an absent section is complete.
+	agents: #Agents
 	// servers are SSH-reachable hosts the DevOps agent (M16) can manage. Empty
 	// for deployments that don't use remote VPS management.
 	servers: [...#Server] | *[]
@@ -155,14 +151,8 @@ package vortex
 
 // #Agents configures agent-runtime options (coordinator local tools).
 #Agents: {
-	local_tools: #LocalTools | *{
-		trusted_root: ""
-		auto_mode:    false
-	}
-	policy: #AgentPolicy | *{
-		deny_tools: []
-		ask_tools:  []
-	}
+	local_tools: #LocalTools
+	policy:      #AgentPolicy
 }
 
 // #AgentPolicy is the per-tool policy for the local agent tools: tools that
@@ -183,4 +173,23 @@ package vortex
 	if auto_mode {
 		trusted_root: string & !=""
 	}
+	sandbox: #Sandbox
+}
+
+// #Sandbox runs run_terminal commands inside an operating-system boundary
+// (Phase 4). Linux uses bubblewrap: only the workspace is writable, the home
+// folder is hidden, and network "off" leaves only loopback. Windows uses a Job
+// Object: the whole process tree is killed together and processes and memory
+// are capped, but the file system and network are not fenced (containment,
+// not isolation). "auto" uses the adapter when it is available; "required"
+// refuses to start without it.
+#Sandbox: {
+	mode:          *"auto" | "required" | "off"
+	network:       *"on" | "off"
+	max_processes: int & >=8 & <=65536 | *256
+	// memory_mb caps the whole process tree (Windows); 0 means no cap.
+	memory_mb: int & >=0 | *8192
+	// read_paths are extra host folders commands may read on Linux (for
+	// toolchains installed outside the system folders).
+	read_paths: [...string] | *[]
 }

@@ -75,6 +75,18 @@ jobs:
         # tampered, wrong-key, unsigned and no-openssl cases with a throwaway key.
         run: sh scripts/install_sig_test.sh
 
+      - name: Test (sandbox escape suite)
+        # Phase 4 gate: run_terminal commands run under bubblewrap on Linux,
+        # and every escape (write or read outside the workspace, symlinks,
+        # network with it off, a fork bomb, signalling the server) must fail.
+        # Ubuntu's AppArmor blocks unprivileged user namespaces by default;
+        # this runner lifts that so bwrap works as it does on a server.
+        # GUBERN_SANDBOX_REQUIRED makes a missing sandbox a failure, not a skip.
+        run: |
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          GUBERN_SANDBOX_REQUIRED=1 go test -count=1 -v -run 'Escape|Sandbox' ./internal/sandbox/ ./internal/agents/
+
       - name: Test (release build tag)
         # Shipped binaries are built with `-tags=release`, which makes the
         # agent command-approval gate unwaivable (audit I6). That code path

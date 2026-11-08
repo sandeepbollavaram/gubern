@@ -45,7 +45,7 @@ func (b runChangesBackend) Diff(ctx context.Context, dir, runID string, step int
 	return agents.GitCheckpointDiff(ctx, dir, runID, step, 256<<10)
 }
 
-func (b runChangesBackend) PrepareRestore(ctx context.Context, dir, runID, sessionID string, step int, requestedBy string) (string, []string, error) {
+func (b runChangesBackend) PrepareRestore(ctx context.Context, dir, runID, sessionID string, step int, _ string) (string, []string, error) {
 	if b.approvals == nil {
 		return "", nil, errors.New("restores need the approval service")
 	}

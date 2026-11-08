@@ -81,4 +81,6 @@ func applyEnvOverrides(cfg *Config, env map[string]string) {
 	// agents.local_tools
 	str("AGENTS_LOCAL_TOOLS_TRUSTED_ROOT", &cfg.Agents.LocalTools.TrustedRoot)
 	boolv("AGENTS_LOCAL_TOOLS_AUTO_MODE", &cfg.Agents.LocalTools.AutoMode)
+	str("AGENTS_LOCAL_TOOLS_SANDBOX_MODE", &cfg.Agents.LocalTools.Sandbox.Mode)
+	str("AGENTS_LOCAL_TOOLS_SANDBOX_NETWORK", &cfg.Agents.LocalTools.Sandbox.Network)
 }

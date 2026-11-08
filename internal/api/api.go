@@ -24,6 +24,7 @@ import (
 	"github.com/sandeepbollavaram/vortex/internal/eventlog"
 	"github.com/sandeepbollavaram/vortex/internal/identity"
 	proxyhttp "github.com/sandeepbollavaram/vortex/internal/proxy/http"
+	"github.com/sandeepbollavaram/vortex/internal/sandbox"
 	"github.com/sandeepbollavaram/vortex/internal/security"
 	"github.com/sandeepbollavaram/vortex/pkg/logger"
 )
@@ -89,6 +90,7 @@ type Server struct {
 	statusProvider  func() StatusInfo
 	skills          SkillsBackend
 	workspaces      WorkspacesBackend
+	sandboxInfo     *sandbox.Info
 	runChanges      RunChangesBackend
 	aiCostProvider  func() AICostInfo
 	healingProvider func() HealingStatus

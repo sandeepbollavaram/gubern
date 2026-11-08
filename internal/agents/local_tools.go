@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sandeepbollavaram/vortex/internal/sandbox"
 )
 
 // Local filesystem + terminal tools give the agent real machine access (like
@@ -101,6 +103,25 @@ type LocalFSConfig struct {
 	// Policy is the operator's per-tool deny/ask policy (agents.policy),
 	// applied by RegisterLocalTools.
 	Policy ToolPolicy
+	// Sandbox, when set, runs run_terminal commands inside the platform's
+	// boundary (Phase 4, M.2); SandboxConfig holds its network and limits.
+	Sandbox       sandbox.Sandbox
+	SandboxConfig sandbox.Config
+	// SandboxInfo describes the boundary in effect (also when there is none).
+	SandboxInfo sandbox.Info
+}
+
+// sandboxPolicy is the boundary for a command run in dir: the workspace
+// (the trusted root, else Root) is the one writable folder.
+func (cfg LocalFSConfig) sandboxPolicy(dir string) sandbox.Policy {
+	ws := cfg.TrustedRoot
+	if ws == "" {
+		ws = cfg.Root
+	}
+	if ws == "" {
+		ws = dir
+	}
+	return sandbox.Policy{Writable: ws, Dir: dir, Network: cfg.SandboxConfig.Network, Limits: cfg.SandboxConfig.Limits}
 }
 
 // resolveLocal resolves p to an absolute path. Relative paths resolve against
@@ -407,8 +428,26 @@ func (t RunTerminalTool) Execute(ctx context.Context, params map[string]any) (an
 	stdout, stderr := newCommandBuffer(), newCommandBuffer()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	var box sandbox.Process
+	if t.cfg.Sandbox != nil {
+		if box, err = t.cfg.Sandbox.Prepare(cmd, t.cfg.sandboxPolicy(resolvedCwd)); err != nil {
+			return nil, err
+		}
+		defer box.Close()
+		cmd.Cancel = func() error { box.Kill(); killProcessTree(cmd); return nil }
+	}
 	start := time.Now()
-	runErr := cmd.Run()
+	runErr := cmd.Start()
+	if runErr == nil && box != nil {
+		if err := box.Started(cmd); err != nil {
+			killProcessTree(cmd)
+			_ = cmd.Wait()
+			return nil, err
+		}
+	}
+	if runErr == nil {
+		runErr = cmd.Wait()
+	}
 	exit := 0
 	if runErr != nil {
 		var ee *exec.ExitError
@@ -423,7 +462,16 @@ func (t RunTerminalTool) Execute(ctx context.Context, params map[string]any) (an
 	return map[string]any{
 		"stdout": stdout.String(), "stderr": stderr.String(),
 		"exit_code": exit, "duration_ms": time.Since(start).Milliseconds(),
+		"sandbox": t.sandboxLabel(),
 	}, nil
+}
+
+// sandboxLabel names the boundary a command ran in, for the run record.
+func (t RunTerminalTool) sandboxLabel() string {
+	if t.cfg.Sandbox == nil {
+		return "none"
+	}
+	return t.cfg.Sandbox.Info().Adapter
 }
 
 // --- CreateProjectTool (approval) -------------------------------------------
