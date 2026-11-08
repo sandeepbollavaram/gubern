@@ -24,6 +24,7 @@ class _OperateTabState extends State<OperateTab> {
   List<RunInfo>? _runs;
   List<AgentInfo>? _agents;
   List<SkillInfo>? _skills;
+  SandboxInfo? _sandbox;
   bool _loaded = false;
 
   @override
@@ -42,6 +43,7 @@ class _OperateTabState extends State<OperateTab> {
       opt(api.runs(limit: 12)),
       opt(api.agents()),
       opt(api.skills()),
+      opt(api.sandbox()),
     ]);
     if (!mounted) return;
     setState(() {
@@ -51,6 +53,7 @@ class _OperateTabState extends State<OperateTab> {
       _runs = r[3] as List<RunInfo>?;
       _agents = r[4] as List<AgentInfo>?;
       _skills = r[5] as List<SkillInfo>?;
+      _sandbox = r[6] as SandboxInfo?;
       _loaded = true;
     });
   }
@@ -106,6 +109,7 @@ class _OperateTabState extends State<OperateTab> {
                         if (s != null && s.routeNames.isNotEmpty) stag(_RoutesPanel(status: s)),
                         stag(_RunsPanel(runs: _runs, onCancel: _cancel, onOpen: (r) => widget.scope.openChat(context, sessionId: r.sessionId))),
                         if (_agents != null && _agents!.isNotEmpty) stag(_AgentsPanel(agents: _agents!)),
+                        if (_sandbox != null) stag(_SandboxPanel(info: _sandbox!)),
                         if (_skills != null) stag(_SkillsPanel(skills: _skills!)),
                         if (s != null) stag(_ServerPanel(status: s)),
                       ],
@@ -401,6 +405,58 @@ class _AgentsPanel extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Where agent commands run: the server's own words for what its sandbox
+/// enforces and what it doesn't, so the phone never claims more.
+class _SandboxPanel extends StatelessWidget {
+  const _SandboxPanel({required this.info});
+  final SandboxInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = context.g;
+    final color = switch (info.level) { 'isolated' => g.ok, 'contained' => g.warn, _ => g.muted };
+    String cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+    Widget line(String text, IconData icon, Color c) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 14, color: c)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(cap(text), style: TextStyle(fontSize: 13, height: 1.35, color: c == g.muted ? g.muted : g.text))),
+        ],
+      ),
+    );
+    return Section(
+      title: 'Sandbox',
+      icon: Icons.shield_outlined,
+      trailing: Pill(label: info.label, color: color),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            switch (info.level) {
+              'isolated' => 'Commands agents run can only change the workspace and can\'t see the rest of the server.',
+              'contained' => 'Commands agents run are kept together and capped, and nothing they start outlives them. They aren\'t fenced off from the rest of the server.',
+              _ => 'Commands agents run go straight to the server, after your approval.',
+            },
+            style: TextStyle(color: g.muted, fontSize: 12.5, height: 1.4),
+          ),
+          if (info.reason.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('Why: ${info.reason}.', style: TextStyle(color: g.muted, fontSize: 12.5)),
+          ],
+          const SizedBox(height: 8),
+          for (final e in info.enforced) line(e, Icons.check_rounded, g.ok),
+          for (final e in info.notEnforced) line('Not enforced: $e', Icons.remove_rounded, g.muted),
+          const SizedBox(height: 6),
+          Text('Network: ${info.network}', style: mono(context, size: 12, color: info.network == 'not enforced' ? g.warn : g.muted)),
         ],
       ),
     );

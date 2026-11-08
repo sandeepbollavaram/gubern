@@ -341,6 +341,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showCheck = false;
   List<WorkspaceInfo> _workspaces = const [];
   String _workspace = 'default';
+  SandboxInfo? _sandbox;
 
   @override
   void initState() {
@@ -350,6 +351,11 @@ class _ChatScreenState extends State<ChatScreen> {
     unawaited(
       widget.api.workspaces().then((w) {
         if (mounted) setState(() => _workspaces = w.where((x) => x.exists).toList());
+      }).catchError((_) {}),
+    );
+    unawaited(
+      widget.api.sandbox().then((s) {
+        if (mounted) setState(() => _sandbox = s);
       }).catchError((_) {}),
     );
     _input.addListener(() => setState(() {}));
@@ -525,6 +531,7 @@ class _ChatScreenState extends State<ChatScreen> {
             check: _check,
             showCheck: _showCheck,
             workspace: _workspace,
+            sandbox: _sandbox,
             onPickWorkspace: _workspaces.length > 1 ? _pickWorkspace : null,
             onToggleCheck: () => setState(() {
               _showCheck = !_showCheck;
@@ -948,6 +955,33 @@ class _InlineApproval extends StatelessWidget {
   }
 }
 
+/// Where this run's commands will run: "Isolated", "Contained" or "Not
+/// sandboxed", from the server. Long-press for the full label.
+class _SandboxBadge extends StatelessWidget {
+  const _SandboxBadge({required this.info});
+  final SandboxInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = context.g;
+    final color = switch (info.level) { 'isolated' => g.ok, 'contained' => g.warn, _ => g.muted };
+    return Tooltip(
+      message: 'Commands run ${info.label}',
+      child: Semantics(
+        label: 'Commands run ${info.label}',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(info.level == 'none' ? Icons.shield_outlined : Icons.verified_user_outlined, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(info.short, style: TextStyle(fontSize: 12, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// What a run changed in a git workspace, with diffs and an undo that
 /// waits for an approval.
 class _ChangesCard extends StatefulWidget {
@@ -1174,6 +1208,7 @@ class _Composer extends StatelessWidget {
     required this.showCheck,
     required this.onToggleCheck,
     required this.workspace,
+    required this.sandbox,
     required this.onPickWorkspace,
     required this.onSend,
     required this.onStop,
@@ -1184,6 +1219,8 @@ class _Composer extends StatelessWidget {
   final bool showCheck;
   final VoidCallback onToggleCheck;
   final String workspace;
+  /// Where the run's commands will run; null when the server doesn't say.
+  final SandboxInfo? sandbox;
   /// Null when there is only one workspace to choose from.
   final VoidCallback? onPickWorkspace;
   final FocusNode focus;
@@ -1276,6 +1313,8 @@ class _Composer extends StatelessWidget {
                             ),
                           ),
                         ),
+                        const Spacer(),
+                        if (sandbox != null) _SandboxBadge(info: sandbox!),
                       ],
                     ),
                   ),

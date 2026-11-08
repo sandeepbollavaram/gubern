@@ -352,6 +352,28 @@ class WorkspaceInfo {
   final bool isDefault, exists;
 }
 
+/// The OS boundary agent commands run in on the server (Phase 4), as the
+/// server reports it: what it enforces and what it doesn't.
+class SandboxInfo {
+  SandboxInfo.fromJson(Map<String, dynamic> j)
+    : label = j['label'] as String? ?? 'Not sandboxed',
+      adapter = j['adapter'] as String? ?? 'none',
+      level = j['level'] as String? ?? 'none',
+      platform = j['platform'] as String? ?? '',
+      network = j['network'] as String? ?? '',
+      reason = j['reason'] as String? ?? '',
+      enforced = [for (final e in (j['enforced'] as List? ?? const [])) '$e'],
+      notEnforced = [for (final e in (j['not_enforced'] as List? ?? const [])) '$e'];
+  /// "Isolated (Linux)", "Contained (Windows)" or "Not sandboxed".
+  final String label, adapter, platform, network, reason;
+  /// "isolated", "contained" or "none".
+  final String level;
+  final List<String> enforced, notEnforced;
+
+  /// One word for a badge.
+  String get short => switch (level) { 'isolated' => 'Isolated', 'contained' => 'Contained', _ => 'Not sandboxed' };
+}
+
 /// One git checkpoint of a run (Phase 4).
 class RunCheckpoint {
   RunCheckpoint.fromJson(Map<String, dynamic> j)
@@ -487,6 +509,12 @@ extension GubernReads on GubernApi {
   Future<List<WorkspaceInfo>> workspaces() async {
     final b = await _get('/api/workspaces');
     return [for (final w in (b['workspaces'] as List? ?? const [])) WorkspaceInfo.fromJson(w as Map<String, dynamic>)];
+  }
+
+  /// The sandbox commands run in, or null when the server doesn't say.
+  Future<SandboxInfo?> sandbox() async {
+    final s = (await _get('/api/workspaces'))['sandbox'];
+    return s is Map<String, dynamic> ? SandboxInfo.fromJson(s) : null;
   }
 
   Future<List<RunCheckpoint>> runChanges(String runId) async {
