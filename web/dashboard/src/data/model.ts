@@ -207,6 +207,8 @@ export interface GubernClient {
   outputs(): Promise<Output[]>;
   models(): Promise<ModelInfo[]>;
   workspaces(): Promise<string[]>;
+  /** Adds a folder as a workspace (workspaces:manage); returns its name. */
+  addWorkspace(path: string): Promise<string>;
   skills(): Promise<SkillList>;
   skill(name: string): Promise<{ skill: Skill; body: string }>;
   setSkillEnabled(name: string, enabled: boolean): Promise<Skill>;

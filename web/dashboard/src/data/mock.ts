@@ -481,6 +481,8 @@ function attentionItems(): AttentionItem[] {
   return items.sort((a, b) => order[a.severity] - order[b.severity] || b.at - a.at);
 }
 
+const mockWorkspaces = ["~/gubern", "~/projects/app", "~/projects/site"];
+
 const mockSkills: Skill[] = [
   {
     name: "gubern-dev-checks",
@@ -525,7 +527,13 @@ export const mockClient: GubernClient = {
       { id: "claude-haiku-5-5", label: "Haiku 5.5", purpose: "Quick answers and classification", provider: "Anthropic" },
       { id: "llama3.1:8b", label: "Llama 3.1 8B", purpose: "Runs locally through Ollama; no cost", provider: "Ollama" },
     ]),
-  workspaces: () => delay(["~/gubern", "~/projects/app", "~/projects/site"]),
+  workspaces: () => delay([...mockWorkspaces]),
+  addWorkspace: (path) => {
+    const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop()?.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "folder";
+    mockWorkspaces.push(name);
+    emit();
+    return delay(name);
+  },
   skills: () => delay({ skills: [...mockSkills], problems: [{ path: ".agents/skills/draft/SKILL.md", error: "frontmatter: name is required" }] }),
   skill: (name) => {
     const s = mockSkills.find((x) => x.name === name);

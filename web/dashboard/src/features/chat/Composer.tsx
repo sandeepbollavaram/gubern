@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Folder, ListChecks, Paperclip, ShieldCheck, Square, X } from "lucide-react";
-import { useModels, useWorkspaces } from "../../data/client";
+import { ArrowUp, ChevronDown, Folder, FolderPlus, ListChecks, Paperclip, ShieldCheck, Square, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { client, useCan, useModels, useWorkspaces } from "../../data/client";
 import type { Mode } from "../../data/model";
 import { useUIStore } from "../../store";
-import { MenuItem, Popover } from "../../ui/primitives";
+import { Button, Dialog, MenuItem, Popover } from "../../ui/primitives";
 import { cx } from "../../ui/util";
 
 const DRAFT_PREFIX = "gubern.draft.";
@@ -54,6 +55,8 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
   // Agent mode: an optional completion check ("done when this passes").
   const [check, setCheck] = useState("");
   const [showCheck, setShowCheck] = useState(false);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const canAddWorkspace = useCan("workspaces:manage");
   const area = useRef<HTMLTextAreaElement | null>(null);
   const { data: models } = useModels();
   const { data: workspaces } = useWorkspaces();
@@ -88,6 +91,14 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
 
   return (
     <div className="w-full">
+      <AddFolderDialog
+        open={addingFolder}
+        onClose={() => setAddingFolder(false)}
+        onAdded={(name) => {
+          setPref("workspace", name);
+          setAddingFolder(false);
+        }}
+      />
       <div
         className={cx(
           "rounded-xl border border-border bg-surface shadow-sm transition-colors duration-150 focus-within:border-primary/60",
@@ -208,12 +219,25 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
           >
             {(close) => (
               <>
-                <p className="px-2.5 pb-1 pt-1.5 text-[12px] text-muted">Agents work only inside the workspace folder.</p>
+                <p className="px-2.5 pb-1 pt-1.5 text-[12px] text-muted">The folder agent runs work in: relative paths, skills and checks use it.</p>
                 {(workspaces ?? []).map((w) => (
                   <MenuItem key={w} checked={w === workspace} onSelect={() => (setPref("workspace", w), close())}>
                     <span className="font-mono text-[13px]">{w}</span>
                   </MenuItem>
                 ))}
+                {canAddWorkspace && (
+                  <MenuItem
+                    onSelect={() => {
+                      close();
+                      setAddingFolder(true);
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5 text-[13px]">
+                      <FolderPlus className="h-3.5 w-3.5" aria-hidden />
+                      Add folder…
+                    </span>
+                  </MenuItem>
+                )}
               </>
             )}
           </Popover>
@@ -318,5 +342,60 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
         </div>
       )}
     </div>
+  );
+}
+
+function AddFolderDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: (name: string) => void }) {
+  const [path, setPath] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const qc = useQueryClient();
+  const submit = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const name = await client.addWorkspace(path.trim());
+      await qc.invalidateQueries({ queryKey: ["gubern", "workspaces"] });
+      setPath("");
+      onAdded(name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The folder couldn't be added.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={open} onClose={onClose} title="Add a folder" className="max-w-lg">
+      <form
+        className="space-y-3 p-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <p className="text-[13px] text-muted">
+          Any folder on the server. Agent runs in it still ask before changing anything or running commands.
+        </p>
+        <label className="block text-[13px] font-medium" htmlFor="add-folder-path">
+          Folder path
+        </label>
+        <input
+          id="add-folder-path"
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
+          placeholder="D:\projects\site  or  /home/me/site"
+          spellCheck={false}
+          autoFocus
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] outline-none focus:border-primary"
+        />
+        {error && <p className="text-[13px] text-danger">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" type="submit" disabled={busy || !path.trim()}>
+            {busy ? "Adding…" : "Add folder"}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

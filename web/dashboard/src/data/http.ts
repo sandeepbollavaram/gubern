@@ -362,9 +362,25 @@ class HttpClient implements GubernClient {
     return list.length ? list : [{ id: "auto", label: "Auto", purpose: "The server picks the model", provider: "gubern" }];
   };
 
+  // Names the server listed, so a submit only ever names a real workspace.
+  private workspaceNames = new Set<string>();
+
   workspaces = async (): Promise<string[]> => {
-    const st = await apiJSON<{ working_dir?: string }>("/api/status").catch(() => ({ working_dir: "" }));
-    return [st.working_dir || "default"];
+    const b = await apiJSON<{ workspaces: { name: string; exists: boolean }[] }>("/api/workspaces").catch(() => ({ workspaces: [] }));
+    const names = b.workspaces.filter((w) => w.exists).map((w) => w.name);
+    this.workspaceNames = new Set(names);
+    return names.length ? names : ["default"];
+  };
+
+  addWorkspace = async (path: string): Promise<string> => {
+    const b = await apiJSON<{ workspace: { name: string } }>("/api/workspaces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    this.workspaceNames.add(b.workspace.name);
+    this.changed();
+    return b.workspace.name;
   };
 
   skills = async (): Promise<SkillList> => {
@@ -597,7 +613,12 @@ class HttpClient implements GubernClient {
     const res = await authFetch("/api/agents/submit?events=1", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", "Idempotency-Key": randomHex(12) },
-      body: JSON.stringify({ message: prefix + text, session_id: sid, ...(opts.mode === "agent" && opts.check?.trim() ? { check: opts.check.trim() } : {}) }),
+      body: JSON.stringify({
+        message: prefix + text,
+        session_id: sid,
+        ...(opts.mode === "agent" && opts.check?.trim() ? { check: opts.check.trim() } : {}),
+        ...(opts.workspace && opts.workspace !== "default" && this.workspaceNames.has(opts.workspace) ? { workspace: opts.workspace } : {}),
+      }),
     }).catch(() => undefined);
     if (!res || !res.ok || !res.body) {
       this.running.delete(sid);
