@@ -52,8 +52,11 @@ After initialization: list tools, then for each tool:
    (object; properties of type string, number, integer, boolean, array of
    scalars; `required` as strings). A tool whose schema can't be expressed
    is listed as unavailable, not offered.
-3. Name it `mcp.<connector-id>.<tool>`; first-party names never start with
-   `mcp.`, so a connector can't shadow one.
+3. Name it `mcp__<connector-id>__<tool>`. Provider tool-calling APIs accept
+   only `^[A-Za-z0-9_-]{1,64}$`, so the dotted form is not usable; a name
+   longer than 64 characters makes the tool unavailable. Connector ids have
+   no `_`, so the first `__` ends the id; first-party names never start with
+   `mcp__`, so a connector can't shadow one.
 4. Record provenance: connector id, server name and version, discovery time.
 
 `tools/list_changed` notifications trigger re-discovery; a tool whose schema
@@ -105,7 +108,7 @@ check.
 ## 9. Resources and prompts
 
 Resources are exposed as one read tool per connector,
-`mcp.<id>.read_resource`, with the same approval rules; contents are capped
+`mcp__<id>__read_resource`, with the same approval rules; contents are capped
 and labelled as untrusted. Prompts are listed for the dashboard only and are
 not injected into runs (they would be connector-authored instructions).
 

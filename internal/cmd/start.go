@@ -1120,6 +1120,7 @@ func runStart(ctx context.Context, pidfile string) error {
 		agentRuntime.Coordinator().SetNetworkPolicy(string(localFS.SandboxConfig.Network),
 			localFS.Sandbox != nil && localFS.SandboxInfo.Network != "not enforced")
 		wireChannelApprovals(approvalSvc, agentRuntime, &msg, log)
+		wireConnectors(ctx, cfg, apiSrv, agentRuntime, approvalSvc, auditLog, localFS, mgr, log)
 		adapter := &agentRuntimeAdapter{rt: agentRuntime}
 		apiSrv.SetAgentRuntime(adapter)
 		mgr.OnShutdown("agents", func(c context.Context) error { return agentRuntime.Stop(c) })

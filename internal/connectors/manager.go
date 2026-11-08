@@ -45,11 +45,16 @@ type Config struct {
 	ConnectTimeout, CallTimeout time.Duration
 }
 
+// FullToolName is the name agents see: mcp__<connector>__<tool>. Connector
+// ids have no "_", so the first "__" after the prefix ends the id, and no
+// first-party tool starts with "mcp__".
+func FullToolName(connectorID, tool string) string { return "mcp__" + connectorID + "__" + tool }
+
 // Tool is one tool a connector offers, as discovered.
 type Tool struct {
 	Connector   string         `json:"connector"`
 	Name        string         `json:"name"`      // the server's name
-	FullName    string         `json:"full_name"` // mcp.<connector>.<name>
+	FullName    string         `json:"full_name"` // mcp__<connector>__<name>
 	Title       string         `json:"title,omitempty"`
 	Description string         `json:"description"`
 	Schema      map[string]any `json:"schema,omitempty"`
@@ -350,7 +355,11 @@ func (m *Manager) discover(ctx context.Context, lc *liveConn) error {
 		} else {
 			dt.Schema, dt.Available = s, true
 		}
-		dt.FullName = "mcp." + lc.conn.ID + "." + dt.Name
+		// Provider tool-calling APIs accept ^[A-Za-z0-9_-]{1,64}$ only.
+		dt.FullName = FullToolName(lc.conn.ID, dt.Name)
+		if dt.Available && len(dt.FullName) > 64 {
+			dt.Available, dt.Schema, dt.Problem = false, nil, "name is longer than 64 characters once namespaced"
+		}
 		dt.Policy = lc.conn.ToolPolicy[t.Name]
 		if dt.Policy == "" {
 			dt.Policy = PolicyAsk

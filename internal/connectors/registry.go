@@ -77,7 +77,9 @@ var ErrNotFound = errors.New("connector not found")
 var (
 	idRE      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 	envNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
-	secretRE  = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+	// Secret names fit the local secret store ([A-Za-z0-9_]) and have no
+	// "__", which separates connector and name in SecretName.
+	secretRE = regexp.MustCompile(`^[A-Za-z0-9]+(_[A-Za-z0-9]+)*$`)
 )
 
 // envDenied are variables a connector may not set: they change how
@@ -94,8 +96,14 @@ func envDenied(name string) bool {
 	return false
 }
 
-// SecretName is the secret-store key for a connector's credential.
-func SecretName(connectorID, name string) string { return "mcp." + connectorID + "." + name }
+// SecretName is the secret-store key for a connector's credential:
+// mcp_<id with - as _>__<name>. Unique because names never contain "__".
+func SecretName(connectorID, name string) string {
+	return "mcp_" + strings.ReplaceAll(connectorID, "-", "_") + "__" + name
+}
+
+// ValidSecretName reports whether name can name a connector credential.
+func ValidSecretName(name string) bool { return len(name) <= 64 && secretRE.MatchString(name) }
 
 // Validate checks c and fills defaults. Errors wrap ErrInput.
 func (c *Connector) Validate() error {
@@ -145,7 +153,7 @@ func (c *Connector) Validate() error {
 			}
 		}
 		for k, v := range c.SecretEnv {
-			if !envNameRE.MatchString(k) || envDenied(k) || !secretRE.MatchString(v) {
+			if !envNameRE.MatchString(k) || envDenied(k) || !ValidSecretName(v) {
 				return bad("secret variable %q is not allowed", k)
 			}
 		}
@@ -178,7 +186,7 @@ func (c *Connector) Validate() error {
 		if loop && !c.Local {
 			return bad("a loopback url needs local: true")
 		}
-		if c.BearerSecret != "" && !secretRE.MatchString(c.BearerSecret) {
+		if c.BearerSecret != "" && !ValidSecretName(c.BearerSecret) {
 			return bad("bearer_secret is not a valid name")
 		}
 	default:

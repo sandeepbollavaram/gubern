@@ -89,6 +89,7 @@ type Server struct {
 	// and secret subsystems.
 	statusProvider  func() StatusInfo
 	skills          SkillsBackend
+	connectors      ConnectorsBackend
 	workspaces      WorkspacesBackend
 	sandboxInfo     *sandbox.Info
 	runChanges      RunChangesBackend
@@ -474,6 +475,16 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "GET /api/workspaces", http.HandlerFunc(s.handleWorkspacesList))
 	s.route(mux, "POST /api/workspaces", http.HandlerFunc(s.handleWorkspaceAdd))
 	s.route(mux, "DELETE /api/workspaces/{name}", http.HandlerFunc(s.handleWorkspaceRemove))
+	s.route(mux, "GET /api/mcp/connectors", http.HandlerFunc(s.handleConnectorsList))
+	s.route(mux, "POST /api/mcp/connectors", http.HandlerFunc(s.handleConnectorAdd))
+	s.route(mux, "GET /api/mcp/connectors/{id}", http.HandlerFunc(s.handleConnectorGet))
+	s.route(mux, "PATCH /api/mcp/connectors/{id}", http.HandlerFunc(s.handleConnectorUpdate))
+	s.route(mux, "DELETE /api/mcp/connectors/{id}", http.HandlerFunc(s.handleConnectorRemove))
+	s.route(mux, "POST /api/mcp/connectors/{id}/enable", http.HandlerFunc(s.handleConnectorEnable))
+	s.route(mux, "POST /api/mcp/connectors/{id}/disable", http.HandlerFunc(s.handleConnectorDisable))
+	s.route(mux, "POST /api/mcp/connectors/{id}/reconnect", http.HandlerFunc(s.handleConnectorReconnect))
+	s.route(mux, "PUT /api/mcp/connectors/{id}/tools/{tool}/policy", http.HandlerFunc(s.handleConnectorToolPolicy))
+	s.route(mux, "PUT /api/mcp/connectors/{id}/secrets/{name}", http.HandlerFunc(s.handleConnectorSecret))
 	s.route(mux, "GET /api/skills", http.HandlerFunc(s.handleSkillsList))
 	s.route(mux, "GET /api/skills/{name}", http.HandlerFunc(s.handleSkillGet))
 	s.route(mux, "POST /api/skills/install", http.HandlerFunc(s.handleSkillInstall))
