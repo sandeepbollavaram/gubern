@@ -497,7 +497,21 @@ Updated 2026-11-08 04:35 IST. Local commits only.
   - Linux (WSL, Go now installed): passes isolated, both as root through the systemd scope and as nobody.
   - With Go installed, `TestRunCommand_EnvironmentIsScrubbed` also passes in WSL.
 
-**Next: the rest of M.** Remaining:
-- the AppContainer spike (Windows file and network fence).
+**M (AppContainer spike): researched. Decision IMPLEMENT, as M.8.**
+- Design document: `docs/design/windows-appcontainer-sandbox.md`.
+- Evidence: an opt-in spike test (`GUBERN_APPCONTAINER_SPIKE=1`) and its run log, `docs/design/evidence/appcontainer-spike-2026-11-08.txt`.
+- **No custom launcher is needed.** An AppContainer token from `NtCreateLowBoxToken`, passed through `os/exec`'s `SysProcAttr.Token`, launches in the box. The existing job adapter composes on top.
+- **Results:** 27 experiments pass. They show:
+  - a deny-by-default file fence;
+  - network off by default, with `internetClient` opening public IPs;
+  - loopback blocked;
+  - job tree kill and caps working on AppContainer processes;
+  - a real `go build` working inside the box.
+- **On this host:** 5 experiments fail. All are name lookups through the system resolver, which here is on loopback (Cloudflare WARP). DNS through 1.1.1.1 works.
+- **Unverified:** LAN access, metadata endpoints, registry, Flutter builds, and module downloads.
+
+**Milestone M: done.** Production AppContainer support is M.8.
+
+**Next: Phase 5, N (MCP connectors).**
 
 Then Phase 5: N (MCP client and connectors).

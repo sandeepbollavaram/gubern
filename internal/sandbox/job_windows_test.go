@@ -17,7 +17,10 @@ import (
 
 var isProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
 
-func platformHelper(verb, _ string) int {
+func platformHelper(verb, arg string) int {
+	if code, ok := acHelper(verb, arg); ok {
+		return code
+	}
 	if verb == "injob" {
 		var in int32
 		r, _, err := isProcessInJob.Call(uintptr(windows.CurrentProcess()), 0, uintptr(unsafe.Pointer(&in)))

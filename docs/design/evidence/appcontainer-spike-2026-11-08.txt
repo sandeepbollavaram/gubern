@@ -1,0 +1,41 @@
+Windows 10.0 build 26300
+AppContainer SID: S-1-15-2-<spike>
+EXPERIMENT E1 profile | expected: a profile and an S-1-15-2 SID | actual: S-1-15-2-<spike> | PASS
+EXPERIMENT E2 launch via os/exec + SysProcAttr.Token | expected: runs, reports appcontainer=true | actual: exit 0 err <nil>: appcontainer=true | PASS
+EXPERIMENT E3 read approved workspace | expected: read=project file | actual: read=project file | PASS
+EXPERIMENT E4 write output dir | expected: wrote | actual: wrote | PASS
+EXPERIMENT E4b write to read-only workspace | expected: write failed, no file | actual: write failed: open D:\tmp\vortex-go\TestAppContainerSpike<n>\001\ws\tamper.txt: Access is denied. | PASS
+EXPERIMENT E5 read unrelated host file | expected: read failed (access denied) | actual: read failed: open D:\tmp\vortex-go\TestAppContainerSpike<n>\001\other\secret.txt: Access is denied. | PASS
+EXPERIMENT E5b write unrelated host folder | expected: write failed | actual: write failed: open D:\tmp\vortex-go\TestAppContainerSpike<n>\001\other\planted.txt: Access is denied. | PASS
+EXPERIMENT E5c list the parent of the granted folders | expected: list failed | actual: list failed: open D:/tmp/vortex-go\TestAppContainerSpike<n>\001: Access is denied. | PASS
+EXPERIMENT E5d write the user's TEMP | expected: write failed | actual: write failed: open D:\tmp\vortex-go\gubern-spike-planted.txt: Access is denied. | PASS
+EXPERIMENT E6 write into read-only toolchain dir | expected: write failed | actual: write failed: open D:\tmp\vortex-go\go-build<n>\b001\planted.exe: Access is denied. | PASS
+EXPERIMENT E7 private cache writable | expected: wrote | actual: wrote | PASS
+EXPERIMENT E9 no capability: internet | expected: dial failed | actual: dial failed: dial tcp: lookup example.com: no such host | PASS
+EXPERIMENT E8 internetClient: internet | expected: connected | actual: dial failed: dial tcp: lookup example.com: no such host | FAIL
+EXPERIMENT E8b internetClient: dial a public IP (no DNS) | expected: connected | actual: connected | PASS
+EXPERIMENT E9b no capability: dial a public IP | expected: dial failed | actual: dial failed: dial tcp 1.1.1.1:443: connectex: An attempt was made to access a socket in a way forbidden by its access permissions. | PASS
+EXPERIMENT E8c profile+token internetClient: dial a public IP | expected: connected | actual: connected | PASS
+EXPERIMENT E10d profile+token internetClient: DNS | expected: resolved | actual: lookup failed: lookup example.com: no such host | FAIL
+EXPERIMENT E10e internetClient + privateNetworkClientServer: DNS | expected: resolved | actual: lookup failed: lookup example.com: no such host | FAIL
+EXPERIMENT E8d internetClient + privateNetworkClientServer: dial by name | expected: connected | actual: dial failed: dial tcp: lookup example.com: no such host | FAIL
+EXPERIMENT E10f internetClient: DNS through a public resolver (UDP 1.1.1.1:53) | expected: resolved | actual: resolved 4 | PASS
+EXPERIMENT E10g no capability: DNS through a public resolver | expected: lookup failed | actual: lookup failed: lookup example.com on [::1]:53: read udp <local-addr>->1.1.1.1:53: i/o timeout | PASS
+EXPERIMENT E10a DNS without capability | observed: exit 3 lookup failed: lookup example.com: no such host
+EXPERIMENT E10b DNS with internetClient | expected: resolved | actual: lookup failed: lookup example.com: no such host | FAIL
+EXPERIMENT E10c loopback to a host service (internetClient) | expected: dial failed (loopback isolation) | actual: dial failed: dial tcp 127.0.0.1:<port>: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond. | PASS
+EXPERIMENT E11 child processes | expected: started=5 | actual: started=5 | PASS
+EXPERIMENT E12 job assignment of an AppContainer process | expected: injob=true and appcontainer=true | actual: injob=true [ac exit 0] appcontainer=true | PASS
+EXPERIMENT E13 tree termination on timeout | expected: child dead | actual: exit 1 after 3.303s, child <pid> alive=false | PASS
+EXPERIMENT E14a process cap | expected: started < 8 | actual: started=7 | PASS
+EXPERIMENT E14b memory cap | expected: allocation fails | actual: exit 2 runtime: VirtualAlloc of 536870912 bytes failed with errno=1455 fatal error: out of memory runtime stack: runtime.throw({0x7ff6120db524?, 0x9c94fff750?}) D:/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/runtime/p… | PASS
+EXPERIMENT E16 inheritable handle in the parent | expected: not inherited | actual: Exception 0xc0000008 0x0 0x0 0x7ffc6949a4fa PC=0x7ffc6949a4fa runtime.cgocall(0x7ff611ee05a0, 0x7ff61228fcd0) D:/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/runtime/cgocall.go:167 +0x3e fp=0x281894269968 sp=0x28189426… | PASS
+EXPERIMENT E18 go build in AppContainer + job | expected: builds hello.exe | actual: err <nil> after 4.5s; | PASS
+EXPERIMENT E18b built binary runs | expected: hi | actual: <nil> hi | PASS
+EXPERIMENT E17 launch failure | expected: an error, no process | actual: fork/exec D:\tmp\vortex-go\TestAppContainerSpike<n>\001\out\missing.exe: The system cannot find the file specified. | PASS
+DeleteAppContainerProfile(gubern.spike.<pid>.net): HRESULT 0x0
+DeleteAppContainerProfile(gubern.spike.<pid>): HRESULT 0x0
+--- FAIL: TestAppContainerSpike (30.47s)
+FAIL
+FAIL	github.com/sandeepbollavaram/vortex/internal/sandbox	31.527s
+FAIL
