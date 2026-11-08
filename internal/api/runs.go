@@ -282,8 +282,9 @@ func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 type resumableCheckpoint struct {
 	Session  string `json:"session"`
 	Task     string `json:"task"`
-	Check    string `json:"check"`
-	ReadOnly bool   `json:"read_only"`
+	Check     string `json:"check"`
+	ReadOnly  bool   `json:"read_only"`
+	Workspace string `json:"workspace"`
 }
 
 func (c resumableCheckpoint) message() string {
@@ -334,6 +335,10 @@ func (s *Server) handleRunResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(principalID(r), "run.resumed", run.ID, map[string]any{"session": run.SessionID})
+	if cp.Workspace != "" {
+		// The folder the run worked in, as the server itself recorded it.
+		r = r.WithContext(agentevents.WithWorkspace(r.Context(), cp.Workspace))
+	}
 	s.startLoggedRun(w, r, cp.message(), run.SessionID, run.ID)
 }
 

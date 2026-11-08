@@ -79,6 +79,9 @@ type agentSubmitRequest struct {
 	// must pass before the run counts as completed. Same as writing
 	// --check "<command>" in the message.
 	Check string `json:"check,omitempty"`
+	// Workspace names the folder an /agent run works in (GET /api/workspaces);
+	// empty means the server's default.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // maxCheckLen bounds a declared completion check.
@@ -155,6 +158,19 @@ func (s *Server) handleAgentSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Message = msg
+	if req.Workspace != "" {
+		if s.workspaces == nil {
+			http.Error(w, "workspaces not available", http.StatusBadRequest)
+			return
+		}
+		dir, err := s.workspaces.Resolve(req.Workspace)
+		if err != nil {
+			http.Error(w, "unknown workspace", http.StatusBadRequest)
+			return
+		}
+		// The folder rides in the request context, which the run keeps.
+		r = r.WithContext(agentevents.WithWorkspace(r.Context(), dir))
+	}
 	// A client-supplied session_id flows into a filesystem path in the memory
 	// store; reject anything that is not a plain id so it cannot traverse out
 	// of the session directory (production audit H1). An empty id is allowed —

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 	"github.com/sandeepbollavaram/vortex/internal/authz"
 )
 
@@ -59,5 +60,62 @@ func TestSubmit_DeclaredCheck(t *testing.T) {
 	defer rt.mu.Unlock()
 	if len(rt.got) != 1 || rt.got[0] != `/agent --check "go test ./..." fix it` {
 		t.Errorf("runtime got %q", rt.got)
+	}
+}
+
+type fakeWorkspaces struct{}
+
+func (fakeWorkspaces) List() ([]WorkspaceInfo, error) {
+	return []WorkspaceInfo{{Name: "default", Path: "/srv/app", Default: true, Exists: true}, {Name: "docs", Path: "/srv/docs", Exists: true}}, nil
+}
+func (fakeWorkspaces) Resolve(name string) (string, error) {
+	switch name {
+	case "", "default":
+		return "/srv/app", nil
+	case "docs":
+		return "/srv/docs", nil
+	}
+	return "", ErrWorkspaceNotFound
+}
+func (fakeWorkspaces) Add(string, string) (WorkspaceInfo, error) {
+	return WorkspaceInfo{Name: "x"}, nil
+}
+func (fakeWorkspaces) Remove(string) error { return nil }
+
+type wsRuntime struct {
+	stubRuntime
+	mu  sync.Mutex
+	got []string
+}
+
+func (r *wsRuntime) Submit(ctx context.Context, msg, sid string) (<-chan string, error) {
+	r.mu.Lock()
+	r.got = append(r.got, agentevents.WorkspaceFrom(ctx))
+	r.mu.Unlock()
+	return r.stubRuntime.Submit(ctx, msg, sid)
+}
+
+func TestSubmit_Workspace(t *testing.T) {
+	f := newAuthzFixture(t)
+	rt := &wsRuntime{stubRuntime: stubRuntime{response: "ok"}}
+	f.s.SetAgentRuntime(rt)
+	f.s.SetWorkspaces(fakeWorkspaces{})
+	_, operator := f.principal(t, authz.Person, "operator")
+	if rec := f.do(http.MethodPost, "/api/agents/submit", operator, `{"message":"/agent tidy","session_id":"w1","workspace":"docs"}`); rec.Code != http.StatusOK {
+		t.Fatalf("submit = %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(http.MethodPost, "/api/agents/submit", operator, `{"message":"/agent tidy","session_id":"w2","workspace":"../etc"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown workspace = %d, want 400", rec.Code)
+	}
+	if rec := f.do(http.MethodGet, "/api/workspaces", operator, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"docs"`) {
+		t.Errorf("list = %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(http.MethodPost, "/api/workspaces", operator, `{"path":"/tmp"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("operator add = %d, want 403 (workspaces:manage)", rec.Code)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if len(rt.got) != 1 || rt.got[0] != "/srv/docs" {
+		t.Errorf("runtime got workspaces %q", rt.got)
 	}
 }

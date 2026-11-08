@@ -88,6 +88,7 @@ type Server struct {
 	// and secret subsystems.
 	statusProvider  func() StatusInfo
 	skills          SkillsBackend
+	workspaces      WorkspacesBackend
 	aiCostProvider  func() AICostInfo
 	healingProvider func() HealingStatus
 	researchList    func() []ResearchReport
@@ -467,6 +468,9 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "POST /api/pairing", http.HandlerFunc(s.handlePairingCreate))
 	s.route(mux, "POST /api/stepup/challenge", http.HandlerFunc(s.handleStepUpChallenge))
 	s.route(mux, "GET /api/devices", http.HandlerFunc(s.handleDevicesList))
+	s.route(mux, "GET /api/workspaces", http.HandlerFunc(s.handleWorkspacesList))
+	s.route(mux, "POST /api/workspaces", http.HandlerFunc(s.handleWorkspaceAdd))
+	s.route(mux, "DELETE /api/workspaces/{name}", http.HandlerFunc(s.handleWorkspaceRemove))
 	s.route(mux, "GET /api/skills", http.HandlerFunc(s.handleSkillsList))
 	s.route(mux, "GET /api/skills/{name}", http.HandlerFunc(s.handleSkillGet))
 	s.route(mux, "POST /api/skills/install", http.HandlerFunc(s.handleSkillInstall))

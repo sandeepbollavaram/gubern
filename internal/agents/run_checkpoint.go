@@ -8,11 +8,13 @@ import "errors"
 
 // RunCheckpoint is what an /agent run saves after every step.
 type RunCheckpoint struct {
-	Session  string    `json:"session"`
-	Task     string    `json:"task"`
-	Check    string    `json:"check,omitempty"`
-	ReadOnly bool      `json:"read_only,omitempty"`
-	State    LoopState `json:"state"`
+	Session  string `json:"session"`
+	Task     string `json:"task"`
+	Check    string `json:"check,omitempty"`
+	ReadOnly bool   `json:"read_only,omitempty"`
+	// Workspace is the folder the run worked in; a resume must use it too.
+	Workspace string    `json:"workspace,omitempty"`
+	State     LoopState `json:"state"`
 }
 
 // Message is the /agent command that restarts this run's task.

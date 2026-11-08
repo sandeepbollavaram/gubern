@@ -235,6 +235,9 @@ type Coordinator struct {
 
 	mu            sync.Mutex
 	checkpoints   RunCheckpointStore // nil: /agent runs are not checkpointed
+	// Per-run workspaces (see workspace_tools.go).
+	workspaceTools WorkspaceToolsFunc
+	workspaceRegs  map[string]*ToolRegistry
 	active        map[string]Agent
 	pending       map[string]*pendingApproval // session → action awaiting approval
 	sessions      map[string]*SessionState    // session → conversation state
@@ -2255,6 +2258,10 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 	if c.cfg.AIGateway == nil {
 		return "No AI provider is configured, so /agent isn't available (run gubern setup).", nil
 	}
+	localTools, workDir, err := c.localToolsFor(ctx)
+	if err != nil {
+		return "Can't open that workspace: " + err.Error(), nil
+	}
 	var transcript []string
 	emit := func(line string) {
 		transcript = append(transcript, line)
@@ -2291,13 +2298,14 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 				if err != nil {
 					return "Can't resume that run: " + err.Error(), nil
 				}
-				if cp.Session != sessionID || cp.Task != task || cp.Check != check || cp.ReadOnly != flags.readOnly {
+				if cp.Session != sessionID || cp.Task != task || cp.Check != check || cp.ReadOnly != flags.readOnly ||
+					(cp.Workspace != "" && filepath.Clean(cp.Workspace) != filepath.Clean(workDir)) {
 					return "Can't resume that run: " + ErrResumeMismatch.Error(), nil
 				}
 				st := cp.State
 				resume = &st
 			}
-			base := RunCheckpoint{Session: sessionID, Task: task, Check: check, ReadOnly: flags.readOnly}
+			base := RunCheckpoint{Session: sessionID, Task: task, Check: check, ReadOnly: flags.readOnly, Workspace: workDir}
 			checkpoint = func(st LoopState) {
 				base.State = st
 				if err := store.SaveCheckpoint(runID, base); err != nil {
@@ -2307,11 +2315,11 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		}
 	}
 	c.auditRunStarted(ctx, sessionID, runID, task, check, flags.readOnly)
-	catalog, skillFiles := c.skillCatalog()
+	catalog, skillFiles := c.skillCatalog(workDir)
 	approver := c.loopApprover(sessionID, emit)
 	var verify func(context.Context) (bool, string)
 	if check != "" {
-		inner := c.loopCheck(sessionID, check, approver, emit)
+		inner := c.loopCheck(localTools, sessionID, check, approver, emit)
 		attempt := 0
 		verify = func(ctx context.Context) (bool, string) {
 			attempt++
@@ -2330,10 +2338,10 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 	}
 	res := RunLoop(ctx, LoopConfig{
 		Model:      model,
-		Tools:      c.cfg.LocalTools,
+		Tools:      localTools,
 		Approval:   approver,
 		Audit:      c.cfg.Audit,
-		System:     DefaultLoopSystemPrompt(c.WorkingDir()),
+		System:     DefaultLoopSystemPrompt(workDir),
 		Reference:  catalog,
 		SkillFiles: skillFiles,
 		Verify:     verify,
@@ -2383,8 +2391,7 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 // Skills are re-read on every run so edits apply without a restart. Only
 // workspace skills are listed: the model reads a skill's body with
 // read_file, which is confined to the workspace.
-func (c *Coordinator) skillCatalog() (string, map[string]SkillRef) {
-	wd := c.WorkingDir()
+func (c *Coordinator) skillCatalog(wd string) (string, map[string]SkillRef) {
 	if wd == "" {
 		return "", nil
 	}
@@ -2553,9 +2560,9 @@ func parseCheckValue(v string) (check, rest string, err error) {
 // loopCheck returns the Verify function for a run: it runs the check command
 // with run_terminal, through the same approval gate and audit trail as any
 // other command, and passes when it exits 0.
-func (c *Coordinator) loopCheck(sessionID, command string, approve ApprovalFunc, emit func(string)) func(context.Context) (bool, string) {
+func (c *Coordinator) loopCheck(tools *ToolRegistry, sessionID, command string, approve ApprovalFunc, emit func(string)) func(context.Context) (bool, string) {
 	return func(ctx context.Context) (bool, string) {
-		tool, err := c.cfg.LocalTools.Get("run_terminal")
+		tool, err := tools.Get("run_terminal")
 		if err != nil {
 			return false, "the check can't run: " + err.Error()
 		}

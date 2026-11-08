@@ -656,6 +656,8 @@ func runStart(ctx context.Context, pidfile string) error {
 	apiSrv.SetApprovals(approvalSvc)
 	// Skills (Phase 2): list, switch, and install only through an approval.
 	apiSrv.SetSkills(newSkillsBackend(resolveWorkingDir(), userdir.Config(), approvalSvc, auditLog, log))
+	// Workspaces: the folders /agent runs may work in (default + added).
+	apiSrv.SetWorkspaces(newWorkspacesBackend(resolveWorkingDir(), userdir.Config()))
 	mgr.OnShutdown("approvals", func(context.Context) error { return approvalSvc.Close() })
 	// Run event log (milestone D): structured streams are recorded, redacted,
 	// and resumable.
@@ -1927,6 +1929,28 @@ func buildAgentRuntime(ctx context.Context, log *slog.Logger, apiAddr string, au
 	if err != nil {
 		log.Warn("agent runtime disabled: coordinator init failed", "err", err)
 		return nil
+	}
+	// Per-run workspaces: the same local tools and policy, rooted at the
+	// run's folder. When the operator confines the agent to a trusted root,
+	// a workspace must lie inside it, and a run there is confined to it.
+	if localRegistry != nil {
+		coord.SetWorkspaceTools(func(root string) (*agents.ToolRegistry, error) {
+			cfg := localFS
+			cfg.Root = root
+			if cfg.TrustedRoot != "" {
+				// The operator's boundary still holds: a workspace outside
+				// the trusted root can't be used to escape it.
+				if rel, err := filepath.Rel(cfg.TrustedRoot, root); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					return nil, fmt.Errorf("%s is outside agents.local_tools.trusted_root (%s)", root, cfg.TrustedRoot)
+				}
+				cfg.TrustedRoot = root
+			}
+			reg := agents.NewToolRegistry()
+			if err := agents.RegisterLocalTools(reg, cfg); err != nil {
+				return nil, err
+			}
+			return reg, nil
+		})
 	}
 
 	// SQLite conversation store (M20): supersedes the JSON memory directory for

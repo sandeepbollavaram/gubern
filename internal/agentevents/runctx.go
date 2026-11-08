@@ -8,6 +8,19 @@ import "context"
 
 type runIDKey struct{}
 type resumeKey struct{}
+type workspaceKey struct{}
+
+// WithWorkspace returns ctx asking the run to work in dir, a workspace the
+// API resolved from its own list (never a client-supplied path).
+func WithWorkspace(ctx context.Context, dir string) context.Context {
+	return context.WithValue(ctx, workspaceKey{}, dir)
+}
+
+// WorkspaceFrom returns the run's workspace folder, or "" for the default.
+func WorkspaceFrom(ctx context.Context) string {
+	d, _ := ctx.Value(workspaceKey{}).(string)
+	return d
+}
 
 // WithRunID returns ctx carrying the event-log run id of the current run.
 func WithRunID(ctx context.Context, runID string) context.Context {
@@ -32,8 +45,8 @@ func ResumeFrom(ctx context.Context) string {
 	return id
 }
 
-// CarryRun returns dst with src's event sink, run id and resume request,
-// for code that runs a request under a different lifecycle context (the
+// CarryRun returns dst with src's event sink, run id, resume request and
+// workspace, for code that runs a request under a different lifecycle context (the
 // agent runtime's) but must keep the request's run identity.
 func CarryRun(dst, src context.Context) context.Context {
 	dst = WithSink(dst, SinkFrom(src))
@@ -42,6 +55,9 @@ func CarryRun(dst, src context.Context) context.Context {
 	}
 	if from := ResumeFrom(src); from != "" {
 		dst = WithResume(dst, from)
+	}
+	if ws := WorkspaceFrom(src); ws != "" {
+		dst = WithWorkspace(dst, ws)
 	}
 	return dst
 }

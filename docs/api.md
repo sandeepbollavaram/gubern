@@ -138,6 +138,32 @@ A skill in the lock whose files no longer match its tree hash is reported
 with `"tampered": true`. It is not offered to the model until it is
 reinstalled. Pinned skills carry `"pinned": true` and their `source`.
 
+## Workspaces
+
+The folders `/agent` runs can work in: the server's working folder (named
+`default`, always present) plus any an operator adds.
+
+```
+GET    /api/workspaces          (agents:read)        → {"workspaces":[{name, path, default?, exists}]}
+POST   /api/workspaces          (workspaces:manage)  {"path": "<absolute folder>", "name": "<optional>"} → 201
+DELETE /api/workspaces/{name}   (workspaces:manage)  → 204 (not "default")
+```
+
+`POST /api/agents/submit` takes `"workspace": "<name>"`. The run then uses
+that folder for relative paths, the skill catalog, its instructions and its
+completion check. Clients send a name; the server maps it to the folder, so a
+client never hands the agent an arbitrary path.
+
+- **Without `agents.local_tools.trusted_root`:** the agent's tools can
+  already reach absolute paths anywhere, gated by approvals, and a workspace
+  only changes the base folder.
+- **With `trusted_root`:** a workspace must lie inside it, and a run there is
+  confined to that workspace.
+- **Resume:** a resumed run keeps its workspace.
+- **Audit:** additions and removals are logged as `workspace.added` and
+  `workspace.removed`.
+- **Storage:** the list is kept in `<user config>/gubern/workspaces.json`.
+
 ## OpenAI-compatible API
 
 Any OpenAI-speaking tool (Claude Code, Aider, Cline, Cursor, …) can use
