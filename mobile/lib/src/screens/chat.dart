@@ -121,13 +121,13 @@ class ChatController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> send(String text, ChatMode mode, {String? check}) async {
+  Future<void> send(String text, ChatMode mode, {String? check, String? workspace}) async {
     final sid = sessionId ??= newSessionId();
     items.add(UserItem(_k('u'), text));
     running = true;
     _changed();
     try {
-      final rs = await api.submit(sid, text, mode, check: check);
+      final rs = await api.submit(sid, text, mode, check: check, workspace: workspace);
       runId = rs.runId;
       _lastSeq = 0;
       await _consume(rs);
@@ -330,12 +330,19 @@ class _ChatScreenState extends State<ChatScreen> {
   late ChatMode _mode = widget.initialMode;
   final _check = TextEditingController();
   bool _showCheck = false;
+  List<WorkspaceInfo> _workspaces = const [];
+  String _workspace = 'default';
 
   @override
   void initState() {
     super.initState();
     _c.addListener(_onChange);
     unawaited(_c.load());
+    unawaited(
+      widget.api.workspaces().then((w) {
+        if (mounted) setState(() => _workspaces = w.where((x) => x.exists).toList());
+      }).catchError((_) {}),
+    );
     _input.addListener(() => setState(() {}));
   }
 
@@ -365,13 +372,48 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  Future<void> _pickWorkspace() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (c) {
+        final g = c.g;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                child: Text('Work in', style: Theme.of(c).textTheme.titleMedium),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text('Relative paths, skills and checks use this folder. Folders are added in the dashboard.',
+                    style: TextStyle(color: g.muted, fontSize: 13)),
+              ),
+              for (final w in _workspaces)
+                ListTile(
+                  leading: Icon(w.name == _workspace ? Icons.radio_button_checked : Icons.radio_button_off, color: w.name == _workspace ? g.brand : g.muted),
+                  title: Text(w.name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                  subtitle: Text(w.path, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono(c, size: 11.5, color: g.muted)),
+                  onTap: () => Navigator.pop(c, w.name),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked != null && mounted) setState(() => _workspace = picked);
+  }
+
   void _send() {
     final t = _input.text.trim();
     if (t.isEmpty || _c.running) return;
     HapticFeedback.selectionClick();
     _input.clear();
     final check = _mode == ChatMode.agent && _showCheck ? _check.text.trim() : '';
-    unawaited(_c.send(t, _mode, check: check.isEmpty ? null : check));
+    unawaited(_c.send(t, _mode, check: check.isEmpty ? null : check, workspace: _workspace));
   }
 
   Future<void> _review(ApprovalItem it) async {
@@ -472,6 +514,8 @@ class _ChatScreenState extends State<ChatScreen> {
             onMode: (m) => setState(() => _mode = m),
             check: _check,
             showCheck: _showCheck,
+            workspace: _workspace,
+            onPickWorkspace: _workspaces.length > 1 ? _pickWorkspace : null,
             onToggleCheck: () => setState(() {
               _showCheck = !_showCheck;
               if (!_showCheck) _check.clear();
@@ -1011,6 +1055,8 @@ class _Composer extends StatelessWidget {
     required this.check,
     required this.showCheck,
     required this.onToggleCheck,
+    required this.workspace,
+    required this.onPickWorkspace,
     required this.onSend,
     required this.onStop,
   });
@@ -1019,6 +1065,9 @@ class _Composer extends StatelessWidget {
   final TextEditingController check;
   final bool showCheck;
   final VoidCallback onToggleCheck;
+  final String workspace;
+  /// Null when there is only one workspace to choose from.
+  final VoidCallback? onPickWorkspace;
   final FocusNode focus;
   final ChatMode mode;
   final bool running;
@@ -1050,6 +1099,30 @@ class _Composer extends StatelessWidget {
                           HapticFeedback.selectionClick();
                           onMode(m);
                         }),
+                      ),
+                    if (mode == ChatMode.agent && onPickWorkspace != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Semantics(
+                          button: true,
+                          label: 'Workspace $workspace',
+                          child: GestureDetector(
+                            onTap: onPickWorkspace,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: g.border)),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.folder_outlined, size: 15, color: g.muted),
+                                  const SizedBox(width: 6),
+                                  Text(workspace, style: mono(context, size: 12.5, color: g.text)),
+                                  Icon(Icons.expand_more_rounded, size: 16, color: g.muted),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     if (mode == ChatMode.agent)
                       Semantics(

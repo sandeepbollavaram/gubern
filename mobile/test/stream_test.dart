@@ -14,6 +14,7 @@ class FakeRuns {
   String? lastEventId;
   String? submitted;
   String? submittedCheck;
+  String? submittedWorkspace;
   String? auth;
   String? idempotency;
   bool interrupted = false;
@@ -56,6 +57,7 @@ class FakeRuns {
     } else if (req.uri.path == '/api/agents/submit') {
       submitted = (jsonDecode(body) as Map)['message'] as String;
       submittedCheck = (jsonDecode(body) as Map)['check'] as String?;
+      submittedWorkspace = (jsonDecode(body) as Map)['workspace'] as String?;
       idempotency = req.headers.value('Idempotency-Key');
       r.headers
         ..contentType = ContentType('text', 'event-stream')
@@ -101,10 +103,11 @@ void main() {
 
   test('a run streams, resumes from the last event after a drop, and ignores replays', () async {
     final c = ChatController(api, 's-test', onRevoked: () => fail('not revoked'));
-    await c.send('run the tests', ChatMode.agent, check: 'go test ./...');
+    await c.send('run the tests', ChatMode.agent, check: 'go test ./...', workspace: 'site');
 
     expect(fake.submitted, '/agent run the tests');
     expect(fake.submittedCheck, 'go test ./...');
+    expect(fake.submittedWorkspace, 'site');
     expect(fake.auth, 'Bearer sekret');
     expect(fake.idempotency, isNotEmpty);
     expect(fake.lastEventId, '3');

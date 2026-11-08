@@ -341,6 +341,17 @@ class SkillInfo {
 /// Statuses of a run still in progress (Phase 3 state machine).
 const liveRunStatuses = {'running', 'waiting_approval', 'verifying'};
 
+/// A folder agent runs can work in.
+class WorkspaceInfo {
+  WorkspaceInfo.fromJson(Map<String, dynamic> j)
+    : name = j['name'] as String? ?? '',
+      path = j['path'] as String? ?? '',
+      isDefault = j['default'] as bool? ?? false,
+      exists = j['exists'] as bool? ?? true;
+  final String name, path;
+  final bool isDefault, exists;
+}
+
 class RunInfo {
   RunInfo.fromJson(Map<String, dynamic> j)
     : id = j['id'] as String? ?? '',
@@ -461,6 +472,11 @@ extension GubernReads on GubernApi {
     return [for (final s in (b['skills'] as List? ?? const [])) SkillInfo.fromJson(s as Map<String, dynamic>)];
   }
 
+  Future<List<WorkspaceInfo>> workspaces() async {
+    final b = await _get('/api/workspaces');
+    return [for (final w in (b['workspaces'] as List? ?? const [])) WorkspaceInfo.fromJson(w as Map<String, dynamic>)];
+  }
+
   Future<List<RunInfo>> runs({String? sessionId, int limit = 20}) async {
     final q = sessionId == null ? '' : '&session_id=${Uri.encodeQueryComponent(sessionId)}';
     final b = await _get('/api/runs?limit=$limit$q');
@@ -478,7 +494,7 @@ extension GubernReads on GubernApi {
   /// Starts a run and streams its events (SSE).
   /// [check], in Agent mode, is a command that must pass before the run
   /// counts as completed (sent as the request's declared check).
-  Future<RunStream> submit(String sessionId, String text, ChatMode mode, {String? check}) async {
+  Future<RunStream> submit(String sessionId, String text, ChatMode mode, {String? check, String? workspace}) async {
     final req = await _streamRequest('POST', '/api/agents/submit?events=1');
     req.headers.set('Idempotency-Key', _randomHex(12));
     req.headers.contentType = ContentType.json;
@@ -487,6 +503,7 @@ extension GubernReads on GubernApi {
       'message': mode.prefix + text,
       'session_id': sessionId,
       if (mode == ChatMode.agent && c.isNotEmpty) 'check': c,
+      if (workspace != null && workspace.isNotEmpty && workspace != 'default') 'workspace': workspace,
     })));
     final res = await req.close();
     await _checkStream(res);
