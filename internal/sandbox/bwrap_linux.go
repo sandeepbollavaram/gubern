@@ -3,12 +3,15 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 )
 
 // The Linux adapter runs the command under bubblewrap (bwrap), an
@@ -34,7 +37,42 @@ var systemDirs = []string{"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "
 type bwrap struct {
 	path    string // bwrap
 	prlimit string // prlimit, or "" when not installed
-	cfg     Config
+	// scope is the systemd-run command that puts each command in its own
+	// cgroup scope (TasksMax, MemoryMax), or nil when systemd can't here.
+	scope []string
+	// memCapped: the host's cgroup v2 memory controller applies MemoryMax.
+	// On hybrid cgroup v1 hosts (WSL, for one) the setting has no effect,
+	// which the escape suite showed, so memory isn't claimed there.
+	memCapped bool
+	cfg       Config
+}
+
+func cgroupV2Memory() bool {
+	b, err := os.ReadFile("/sys/fs/cgroup/cgroup.controllers")
+	return err == nil && strings.Contains(" "+strings.TrimSpace(string(b))+" ", " memory ")
+}
+
+// probeScope finds a systemd scope this server can start: the system
+// manager when running as root, else the user's own manager (a normal
+// login session has one). A cgroup's pids.max caps processes reliably,
+// unlike RLIMIT_NPROC, which also never applies to root.
+func probeScope() []string {
+	sr, err := exec.LookPath("systemd-run")
+	if err != nil {
+		return nil
+	}
+	scope := []string{sr}
+	if os.Geteuid() != 0 {
+		scope = append(scope, "--user")
+	}
+	scope = append(scope, "--scope", "--quiet", "--collect")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	probe := append(append([]string{}, scope[1:]...), "-p", "TasksMax=8", "--", "/bin/true")
+	if exec.CommandContext(ctx, sr, probe...).Run() != nil {
+		return nil
+	}
+	return scope
 }
 
 func newPlatform(cfg Config) (Sandbox, error) {
@@ -45,6 +83,10 @@ func newPlatform(cfg Config) (Sandbox, error) {
 	b := &bwrap{path: path, cfg: cfg}
 	if p, err := exec.LookPath("prlimit"); err == nil {
 		b.prlimit = p
+	}
+	if os.Getenv("GUBERN_SANDBOX_NO_SCOPE") != "1" { // tests compare both paths
+		b.scope = probeScope()
+		b.memCapped = b.scope != nil && cgroupV2Memory()
 	}
 	// Namespaces can be switched off (or restricted by AppArmor); try one.
 	if out, err := exec.Command(path, b.base(NetworkOff)...).CombinedOutput(); err != nil {
@@ -63,18 +105,30 @@ func (b *bwrap) Info() Info {
 			"system folders are read-only",
 			"separate process namespace; the tree dies with the command",
 		},
-		NotEnforced: []string{"memory cap (needs cgroups)", "system call filter (seccomp)"},
+		NotEnforced: []string{"system call filter (seccomp)"},
 	}
 	if b.cfg.Network == NetworkOff {
 		in.Enforced = append(in.Enforced, "no network (loopback only)")
 	}
-	if b.prlimit != "" {
+	switch {
+	case b.scope != nil:
+		in.Enforced = append(in.Enforced, "at most "+strconv.Itoa(b.cfg.MaxProcesses)+" processes (cgroup)")
+		switch {
+		case b.cfg.MemoryMB <= 0:
+			in.NotEnforced = append(in.NotEnforced, "memory cap (memory_mb is 0)")
+		case b.memCapped:
+			in.Enforced = append(in.Enforced, "at most "+strconv.Itoa(b.cfg.MemoryMB)+" MB of memory (cgroup)")
+		default:
+			in.NotEnforced = append(in.NotEnforced, "memory cap (this host's cgroups don't apply it; needs cgroup v2)")
+		}
+	case b.prlimit != "":
 		// RLIMIT_NPROC via prlimit: in the escape suite the cap didn't apply
 		// in 2 of about 90 runs (not reproducible on demand), so it isn't
 		// claimed as enforced. cgroups pids.max is the reliable fix.
 		in.Enforced = append(in.Enforced, "at most "+strconv.Itoa(b.cfg.MaxProcesses)+" processes (best effort)")
-	} else {
-		in.NotEnforced = append(in.NotEnforced, "process cap (prlimit is not installed)")
+		in.NotEnforced = append(in.NotEnforced, "memory cap (needs a systemd scope)")
+	default:
+		in.NotEnforced = append(in.NotEnforced, "process cap (no systemd scope or prlimit)", "memory cap (needs a systemd scope)")
 	}
 	return in
 }
@@ -150,6 +204,20 @@ func (b *bwrap) Prepare(cmd *exec.Cmd, p Policy) (Process, error) {
 	args = append(args, cmd.Args[1:]...)
 	cmd.Path = b.path
 	cmd.Args = append([]string{"bwrap"}, args...)
+	if b.scope != nil {
+		// systemd-run --scope moves itself into a new cgroup and then execs
+		// bwrap in place: same process, so the group kill still works.
+		sargs := append([]string{}, b.scope...)
+		if p.MaxProcesses > 0 {
+			sargs = append(sargs, "-p", "TasksMax="+strconv.Itoa(p.MaxProcesses))
+		}
+		if p.MemoryMB > 0 {
+			sargs = append(sargs, "-p", "MemoryMax="+strconv.Itoa(p.MemoryMB)+"M")
+		}
+		sargs = append(sargs, "--", b.path)
+		cmd.Path = b.scope[0]
+		cmd.Args = append(sargs, args...)
+	}
 	cmd.Dir = dir
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}

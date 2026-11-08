@@ -288,8 +288,8 @@ agents: local_tools: sandbox: {
 | Writable | the workspace only (trusted root, else the work dir) | anything the server's user can write | anything |
 | Home folder and server state | hidden; commands get a private home that persists between commands (in the cache dir, `sandbox-home`) | visible | visible |
 | Network off | enforced (own network namespace) | **not enforced** | not enforced |
-| Process cap | best effort (`prlimit`; it didn't apply in 2 of ~90 test runs, cause unknown) | yes | no |
-| Memory cap | no (needs cgroups) | yes | no |
+| Process cap | yes with a systemd scope (cgroup `TasksMax`); otherwise best effort (`prlimit`, which didn't apply in 2 of ~90 test runs and never applies to root) | yes | no |
+| Memory cap | with a systemd scope on cgroup v2 hosts (`MemoryMax`); not on hybrid cgroup v1 hosts such as WSL | yes | no |
 | Whole tree dies with the command | yes (PID namespace) | yes (the job is ended when the command exits) | process group on timeout |
 
 On Linux it needs `bwrap` (package `bubblewrap`) and unprivileged user

@@ -474,8 +474,20 @@ Updated 2026-11-08 04:35 IST. Local commits only.
   - The cap is now reported as "best effort", and cgroups `pids.max` is the planned fix.
 - **Environment gap:** `TestRunCommand_EnvironmentIsScrubbed` fails in WSL only because Go isn't installed there; it runs `go env`.
 
+**M.6: a reliable Linux process cap. Done.**
+- When the server can start a systemd scope, each sandboxed command runs in its own cgroup scope with `TasksMax` (and `MemoryMax`).
+  - Root uses the system manager; other users use their own user manager.
+  - `systemd-run --scope` execs bwrap in place, so the process-group kill still works.
+  - Without a scope, the sandbox falls back to prlimit, labelled "best effort".
+- **Results (WSL, root):**
+  - All escape tests pass through the scope.
+  - The fork bomb was stopped in **50 of 50** runs. RLIMIT_NPROC never applies to root, so the cgroup did it.
+  - Control: with the scope turned off, the same test lets all 200 processes start.
+  - The prlimit fallback, run as nobody, passes.
+- **Memory cap:** `MemoryMax`, `MemorySwapMax` and `MemoryLimit` had no effect on WSL's hybrid cgroups (512 MB allocated under 64 MB). So memory is claimed only when the host's cgroup v2 controller has `memory`; the memory test skips otherwise.
+- **Not verified:** a non-root user's systemd scope. WSL's default user is root, and nobody has no user manager.
+
 **Next: the rest of M.** Remaining:
-- a reliable Linux process cap (cgroups `pids.max`);
 - wrapping Forge builds;
 - the AppContainer spike (Windows file and network fence).
 

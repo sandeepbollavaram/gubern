@@ -250,3 +250,20 @@ func TestSandbox_PrivateHome(t *testing.T) {
 		t.Errorf("HOME inside = %q, want %s", o, p.Home)
 	}
 }
+
+// With a systemd scope, the cgroup caps the whole tree's memory (and its
+// processes, see TestEscape_ForkBomb); a control shows the same helper
+// fits under a larger cap.
+func TestSandbox_CgroupMemoryCap(t *testing.T) {
+	sb, p := bwrapBox(t, NetworkOff, Limits{MaxProcesses: 64, MemoryMB: 64})
+	if !strings.Contains(strings.Join(sb.Info().Enforced, ";"), "MB of memory (cgroup)") {
+		t.Skip("memory isn't capped on this host (no systemd scope, or no cgroup v2 memory controller)")
+	}
+	if o, code := runIn(t, sb, p, "alloc:512", 60*time.Second); code == 0 || strings.Contains(o, "allocated 512") {
+		t.Errorf("allocated 512 MB under a 64 MB cap: exit %d %q", code, o)
+	}
+	sb2, p2 := bwrapBox(t, NetworkOff, Limits{MaxProcesses: 64, MemoryMB: 1024})
+	if o, code := runIn(t, sb2, p2, "alloc:128", 60*time.Second); code != 0 {
+		t.Errorf("128 MB under a 1024 MB cap failed: exit %d %q", code, o)
+	}
+}
