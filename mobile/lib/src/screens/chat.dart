@@ -56,6 +56,11 @@ class SkillItem extends Item {
   final String name, hash;
 }
 
+class ChangesItem extends Item {
+  ChangesItem(super.key, this.runId);
+  final String runId;
+}
+
 class StatusItem extends Item {
   StatusItem(super.key, this.text, this.tone);
   final String text;
@@ -264,6 +269,10 @@ class ChatController extends ChangeNotifier {
       case 'check_result':
         final passed = ev.status == 'passed';
         items.add(StatusItem(_k('s'), passed ? 'Check passed: ${ev.label}' : 'Check failed (${ev.text}): ${ev.label}', passed ? 'ok' : 'warn'));
+      case 'checkpoint_created':
+        if (ev.runId.isNotEmpty && ev.status != '0' && !items.any((i) => i is ChangesItem && i.runId == ev.runId)) {
+          items.add(ChangesItem(_k('chg'), ev.runId));
+        }
       case 'skill_activated':
         if (ev.label.isNotEmpty) items.add(SkillItem(_k('sk'), ev.label, ev.skillHash));
       case 'run_finished':
@@ -494,6 +503,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             ToolsItem() => _ToolsGroup(it, live: _c.running),
                             ApprovalItem() => _InlineApproval(it, onReview: () => _review(it)),
                             SkillItem() => _SkillChip(it),
+                            ChangesItem() => _ChangesCard(api: widget.api, runId: it.runId),
                             StatusItem() => _StatusLine(it),
                           },
                         ),
@@ -931,6 +941,114 @@ class _InlineApproval extends StatelessWidget {
                       },
                     ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What a run changed in a git workspace, with diffs and an undo that
+/// waits for an approval.
+class _ChangesCard extends StatefulWidget {
+  const _ChangesCard({required this.api, required this.runId});
+  final GubernApi api;
+  final String runId;
+  @override
+  State<_ChangesCard> createState() => _ChangesCardState();
+}
+
+class _ChangesCardState extends State<_ChangesCard> {
+  List<RunCheckpoint>? _cps;
+  int? _open;
+  String _diff = '';
+  bool _asked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.api.runChanges(widget.runId).then((c) {
+      if (mounted) setState(() => _cps = c);
+    }).catchError((_) {}));
+  }
+
+  Future<void> _toggle(int step) async {
+    if (_open == step) return setState(() => _open = null);
+    setState(() => (_open = step, _diff = 'Loading…'));
+    final d = await widget.api.runDiff(widget.runId, step).catchError((_) => "Couldn't load the diff.");
+    if (mounted) setState(() => _diff = d.isEmpty ? 'No changes.' : d);
+  }
+
+  Future<void> _undo() async {
+    try {
+      await widget.api.restoreRun(widget.runId, 0);
+      if (!mounted) return;
+      setState(() => _asked = true);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Undo requested. Approve it in the Inbox to restore the files.')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't request the undo.")));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final g = context.g;
+    final steps = (_cps ?? const <RunCheckpoint>[]).where((c) => c.step > 0 && c.files.isNotEmpty).toList();
+    if (steps.isEmpty) return const SizedBox.shrink();
+    final files = {for (final c in steps) for (final f in c.files) f.substring(2)};
+    return Padding(
+      padding: const EdgeInsets.only(left: 36),
+      child: Container(
+        decoration: BoxDecoration(color: g.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: g.border)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
+              child: Row(
+                children: [
+                  Icon(Icons.commit_rounded, size: 16, color: g.muted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Changed ${files.length} file${files.length == 1 ? '' : 's'}',
+                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500)),
+                  ),
+                  TextButton.icon(
+                    onPressed: _asked ? null : _undo,
+                    icon: const Icon(Icons.undo_rounded, size: 16),
+                    label: Text(_asked ? 'Waiting for approval' : 'Undo'),
+                    style: TextButton.styleFrom(foregroundColor: g.warn, minimumSize: const Size(0, 34)),
+                  ),
+                ],
+              ),
+            ),
+            for (final c in steps) ...[
+              InkWell(
+                onTap: () => unawaited(_toggle(c.step)),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final f in c.files)
+                        Text.rich(
+                          TextSpan(children: [
+                            TextSpan(
+                              text: '${f[0]}  ',
+                              style: mono(context, size: 12, color: f.startsWith('A') ? g.ok : (f.startsWith('D') ? g.critical : g.warn)),
+                            ),
+                            TextSpan(text: f.substring(2), style: mono(context, size: 12)),
+                          ]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_open == c.step) Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), child: CodeBlock(_diff, maxLines: 18)),
+            ],
+            const SizedBox(height: 4),
           ],
         ),
       ),

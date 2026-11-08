@@ -352,6 +352,18 @@ class WorkspaceInfo {
   final bool isDefault, exists;
 }
 
+/// One git checkpoint of a run (Phase 4).
+class RunCheckpoint {
+  RunCheckpoint.fromJson(Map<String, dynamic> j)
+    : step = (j['step'] as num?)?.toInt() ?? 0,
+      label = j['label'] as String? ?? '',
+      files = [for (final f in (j['files'] as List? ?? const [])) '$f'];
+  final int step;
+  final String label;
+  /// "M path", "A path" or "D path".
+  final List<String> files;
+}
+
 class RunInfo {
   RunInfo.fromJson(Map<String, dynamic> j)
     : id = j['id'] as String? ?? '',
@@ -475,6 +487,20 @@ extension GubernReads on GubernApi {
   Future<List<WorkspaceInfo>> workspaces() async {
     final b = await _get('/api/workspaces');
     return [for (final w in (b['workspaces'] as List? ?? const [])) WorkspaceInfo.fromJson(w as Map<String, dynamic>)];
+  }
+
+  Future<List<RunCheckpoint>> runChanges(String runId) async {
+    final b = await _get('/api/runs/${Uri.encodeComponent(runId)}/changes');
+    return [for (final c in (b['checkpoints'] as List? ?? const [])) RunCheckpoint.fromJson(c as Map<String, dynamic>)];
+  }
+
+  Future<String> runDiff(String runId, int step) async =>
+      (await _get('/api/runs/${Uri.encodeComponent(runId)}/changes/$step'))['diff'] as String? ?? '';
+
+  /// Asks to restore the workspace to [step]; it happens once approved.
+  Future<String> restoreRun(String runId, int step) async {
+    final b = await _send('POST', _url('/api/runs/${Uri.encodeComponent(runId)}/restore'), {'step': step});
+    return b['approval_id'] as String? ?? '';
   }
 
   Future<List<RunInfo>> runs({String? sessionId, int limit = 20}) async {

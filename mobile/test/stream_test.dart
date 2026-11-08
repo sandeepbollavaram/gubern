@@ -67,6 +67,7 @@ class FakeRuns {
       _frame(r, {'type': 'skill_activated', 'run_id': 'run-1', 'label': 'dev-checks', 'skill_hash': 'ab' * 32});
       _frame(r, {'type': 'tool_start', 'run_id': 'run-1', 'seq': 2, 'step_id': 'st1', 'tool': 'run_terminal', 'label': 'go test ./...'});
       _frame(r, {'type': 'tool_end', 'run_id': 'run-1', 'seq': 3, 'step_id': 'st1', 'status': 'ok', 'duration_ms': 1200, 'output': 'ok'});
+      _frame(r, {'type': 'checkpoint_created', 'run_id': 'run-1', 'label': 'write_file a.go', 'status': '1', 'text': 'abc'});
       // Connection drops here: no done frame.
     } else if (req.uri.path == '/api/runs/run-1/events') {
       lastEventId = req.headers.value('Last-Event-ID');
@@ -117,6 +118,7 @@ void main() {
     expect(tools.steps.single.status, 'ok', reason: 'the replayed seq 3 must not overwrite the step');
     expect(tools.steps.single.durationMs, 1200);
 
+    expect(c.items.whereType<ChangesItem>().single.runId, 'run-1');
     final skill = c.items.whereType<SkillItem>().single;
     expect(skill.name, 'dev-checks');
     expect(skill.hash, hasLength(64));
