@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Folder, FolderPlus, ListChecks, Paperclip, ShieldCheck, Square, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Folder, FolderPlus, Globe, GlobeLock, ListChecks, Paperclip, ShieldCheck, Square, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { client, useCan, useModels, useWorkspaces } from "../../data/client";
+import { client, useCan, useModels, useWorkspaceList, useWorkspaces } from "../../data/client";
 import type { Mode } from "../../data/model";
 import { useUIStore } from "../../store";
 import { Button, Dialog, MenuItem, Popover } from "../../ui/primitives";
@@ -42,7 +42,7 @@ const EFFORTS = [
 export interface ComposerProps {
   draftKey: string;
   running?: boolean;
-  onSend: (text: string, opts: { queue: boolean; check?: string }) => void;
+  onSend: (text: string, opts: { queue: boolean; check?: string; network?: "on" | "off" }) => void;
   onStop?: () => void;
   autoFocus?: boolean;
   placeholder?: string;
@@ -56,6 +56,12 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
   const [check, setCheck] = useState("");
   const [showCheck, setShowCheck] = useState(false);
   const [addingFolder, setAddingFolder] = useState(false);
+  // Agent mode: the run's network (Phase 4). Shown only where the server's
+  // sandbox enforces it; turning it on beyond the default asks for approval.
+  const { data: wsList } = useWorkspaceList();
+  const netDefault = wsList?.sandbox?.network === "on" || wsList?.sandbox?.network === "off" ? wsList.sandbox.network : undefined;
+  const [netChoice, setNetChoice] = useState<"on" | "off" | undefined>();
+  const network = netChoice ?? netDefault;
   const canAddWorkspace = useCan("workspaces:manage");
   const area = useRef<HTMLTextAreaElement | null>(null);
   const { data: models } = useModels();
@@ -82,7 +88,12 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
   const submit = (queue: boolean) => {
     const t = text.trim();
     if (!t) return;
-    onSend(t, { queue, check: (mode === "agent" || mode === "team") && showCheck ? check.trim() || undefined : undefined });
+    const agentish = mode === "agent" || mode === "team";
+    onSend(t, {
+      queue,
+      check: agentish && showCheck ? check.trim() || undefined : undefined,
+      network: agentish && network && network !== netDefault ? network : undefined,
+    });
     setText("");
   };
 
@@ -163,6 +174,28 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
             >
               <ListChecks className="h-4 w-4" aria-hidden />
               Add check
+            </button>
+          )}
+          {(mode === "agent" || mode === "team") && network && (
+            <button
+              type="button"
+              onClick={() => setNetChoice(network === "on" ? "off" : "on")}
+              aria-pressed={network === "on"}
+              title={
+                network === "on"
+                  ? netDefault === "off"
+                    ? "Network on for this run: it asks for your approval when the run starts. Click to keep it off."
+                    : "Commands in this run can reach the network. Click to turn it off for this run."
+                  : "Commands in this run get no network (loopback only). Click to turn it on."
+              }
+              className={cx(
+                "flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-[12px] hover:bg-accent",
+                network !== netDefault ? "text-warning" : "text-muted hover:text-foreground",
+              )}
+            >
+              {network === "on" ? <Globe className="h-4 w-4" aria-hidden /> : <GlobeLock className="h-4 w-4" aria-hidden />}
+              {network === "on" ? "Network on" : "Network off"}
+              {network === "on" && netDefault === "off" && <span className="text-muted">· needs approval</span>}
             </button>
           )}
           <button

@@ -669,6 +669,7 @@ class HttpClient implements GubernClient {
         message: prefix + text,
         session_id: sid,
         ...((opts.mode === "agent" || opts.mode === "team") && opts.check?.trim() ? { check: opts.check.trim() } : {}),
+        ...((opts.mode === "agent" || opts.mode === "team") && opts.network ? { network: opts.network } : {}),
         ...(opts.workspace && opts.workspace !== "default" && this.workspaceNames.has(opts.workspace) ? { workspace: opts.workspace } : {}),
       }),
     }).catch(() => undefined);

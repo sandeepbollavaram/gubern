@@ -226,6 +226,8 @@ export interface SendOptions {
   workspace: string;
   /** Agent mode: a command that must pass before the run counts as done. */
   check?: string;
+  /** Agent mode: the run's network when it differs from the server's default. */
+  network?: "on" | "off";
 }
 
 export interface ModelInfo {

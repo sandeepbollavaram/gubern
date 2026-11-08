@@ -253,9 +253,9 @@ function Conversation({ id }: { id: string }) {
   const title = session?.title ?? "Conversation";
   const currentStep = plan ? plan.steps.findIndex((s) => s.status === "current") + 1 : 0;
 
-  const send = (text: string, { queue, check }: { queue: boolean; check?: string }) => {
+  const send = (text: string, { queue, check, network }: { queue: boolean; check?: string; network?: "on" | "off" }) => {
     if (running && !queue) client.stop(id);
-    void client.send(id, text, { mode: "agent", model: useUIStore.getState().model, workspace: useUIStore.getState().workspace, check });
+    void client.send(id, text, { mode: "agent", model: useUIStore.getState().model, workspace: useUIStore.getState().workspace, check, network });
     setAtBottom(true);
   };
 
