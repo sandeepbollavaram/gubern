@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Folder, Paperclip, ShieldCheck, Square } from "lucide-react";
+import { ArrowUp, ChevronDown, Folder, ListChecks, Paperclip, ShieldCheck, Square, X } from "lucide-react";
 import { useModels, useWorkspaces } from "../../data/client";
 import type { Mode } from "../../data/model";
 import { useUIStore } from "../../store";
@@ -41,7 +41,7 @@ const EFFORTS = [
 export interface ComposerProps {
   draftKey: string;
   running?: boolean;
-  onSend: (text: string, opts: { queue: boolean }) => void;
+  onSend: (text: string, opts: { queue: boolean; check?: string }) => void;
   onStop?: () => void;
   autoFocus?: boolean;
   placeholder?: string;
@@ -51,6 +51,9 @@ export interface ComposerProps {
 
 export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeholder, compact }: ComposerProps) {
   const [text, setText] = useState(() => loadDraft(draftKey));
+  // Agent mode: an optional completion check ("done when this passes").
+  const [check, setCheck] = useState("");
+  const [showCheck, setShowCheck] = useState(false);
   const area = useRef<HTMLTextAreaElement | null>(null);
   const { data: models } = useModels();
   const { data: workspaces } = useWorkspaces();
@@ -76,7 +79,7 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
   const submit = (queue: boolean) => {
     const t = text.trim();
     if (!t) return;
-    onSend(t, { queue });
+    onSend(t, { queue, check: mode === "agent" && showCheck ? check.trim() || undefined : undefined });
     setText("");
   };
 
@@ -112,7 +115,45 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
           }}
           className="block w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-muted focus-visible:outline-none"
         />
+        {mode === "agent" && showCheck && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
+            <ListChecks className="h-4 w-4 shrink-0 text-success" aria-hidden />
+            <label className="sr-only" htmlFor={`check-${draftKey}`}>
+              Done when this command passes
+            </label>
+            <input
+              id={`check-${draftKey}`}
+              value={check}
+              onChange={(e) => setCheck(e.target.value)}
+              placeholder="Done when this passes, e.g. go test ./..."
+              spellCheck={false}
+              className="min-w-0 flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:font-sans placeholder:text-muted"
+            />
+            <button
+              type="button"
+              aria-label="Remove the check"
+              onClick={() => {
+                setShowCheck(false);
+                setCheck("");
+              }}
+              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-muted hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
         <div className="mt-1 flex items-center gap-1">
+          {mode === "agent" && !showCheck && (
+            <button
+              type="button"
+              onClick={() => setShowCheck(true)}
+              title="Add a completion check: the run counts as done only when this command passes"
+              className="flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-[12px] text-muted hover:bg-accent hover:text-foreground"
+            >
+              <ListChecks className="h-4 w-4" aria-hidden />
+              Add check
+            </button>
+          )}
           <button
             type="button"
             aria-label="Attach a file"

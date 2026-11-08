@@ -90,9 +90,9 @@ export function Home() {
   const location = useLocation();
   const focus = (location.state as { focusComposer?: boolean } | null)?.focusComposer;
 
-  const start = async (text: string) => {
+  const start = async (text: string, check?: string) => {
     const prefs = useUIStore.getState();
-    const id = await client.send(undefined, text, { mode: prefs.mode, model: prefs.model, workspace: prefs.workspace });
+    const id = await client.send(undefined, text, { mode: prefs.mode, model: prefs.model, workspace: prefs.workspace, check });
     navigate(`/chat/${id}`);
   };
 
@@ -109,7 +109,7 @@ export function Home() {
         </div>
 
         {canRun ? (
-          <Composer draftKey="new" autoFocus={focus ?? true} onSend={(t) => void start(t)} placeholder="Ask Gubern, or describe a task. Type / for commands" />
+          <Composer draftKey="new" autoFocus={focus ?? true} onSend={(t, o) => void start(t, o.check)} placeholder="Ask Gubern, or describe a task. Type / for commands" />
         ) : (
           <p className="rounded-lg border border-border bg-surface px-4 py-3 text-center text-[13px] text-muted">
             Your key can read Gubern but not run agents. Ask the owner for an operator key.

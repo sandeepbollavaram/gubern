@@ -168,9 +168,9 @@ function Conversation({ id }: { id: string }) {
   const title = session?.title ?? "Conversation";
   const currentStep = plan ? plan.steps.findIndex((s) => s.status === "current") + 1 : 0;
 
-  const send = (text: string, { queue }: { queue: boolean }) => {
+  const send = (text: string, { queue, check }: { queue: boolean; check?: string }) => {
     if (running && !queue) client.stop(id);
-    void client.send(id, text, { mode: "agent", model: useUIStore.getState().model, workspace: useUIStore.getState().workspace });
+    void client.send(id, text, { mode: "agent", model: useUIStore.getState().model, workspace: useUIStore.getState().workspace, check });
     setAtBottom(true);
   };
 

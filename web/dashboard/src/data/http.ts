@@ -597,7 +597,7 @@ class HttpClient implements GubernClient {
     const res = await authFetch("/api/agents/submit?events=1", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", "Idempotency-Key": randomHex(12) },
-      body: JSON.stringify({ message: prefix + text, session_id: sid }),
+      body: JSON.stringify({ message: prefix + text, session_id: sid, ...(opts.mode === "agent" && opts.check?.trim() ? { check: opts.check.trim() } : {}) }),
     }).catch(() => undefined);
     if (!res || !res.ok || !res.body) {
       this.running.delete(sid);

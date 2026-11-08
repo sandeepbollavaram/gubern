@@ -187,6 +187,8 @@ export interface SendOptions {
   mode: Mode;
   model: string;
   workspace: string;
+  /** Agent mode: a command that must pass before the run counts as done. */
+  check?: string;
 }
 
 export interface ModelInfo {
