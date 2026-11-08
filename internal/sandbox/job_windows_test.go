@@ -137,13 +137,16 @@ func TestJob_MemoryCap(t *testing.T) {
 
 // Windows doesn't fence the network or the file system; Info says so.
 func TestJob_InfoIsHonest(t *testing.T) {
-	_, info, err := New(Config{Mode: ModeAuto, Network: NetworkOff})
-	if err != nil {
-		t.Fatal(err)
+	for _, net := range []Network{NetworkOff, NetworkOn} {
+		_, in, err := New(Config{Mode: ModeAuto, Network: net})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if in.Network != "not enforced" {
+			t.Errorf("network %s reported as %q", net, in.Network)
+		}
 	}
-	if info.Network != "not enforced" {
-		t.Errorf("network off reported as %q", info.Network)
-	}
+	_, info, _ := New(Config{Mode: ModeAuto, Network: NetworkOff})
 	joined := strings.Join(info.NotEnforced, "; ")
 	if !strings.Contains(joined, "file system") || !strings.Contains(joined, "network") {
 		t.Errorf("not_enforced = %q", joined)

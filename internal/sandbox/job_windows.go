@@ -54,7 +54,8 @@ func newPlatform(cfg Config) (Sandbox, error) {
 func (s *jobSandbox) Info() Info {
 	in := Info{
 		Adapter: "job-object", Level: LevelContained, Platform: "Windows", Mode: s.cfg.Mode,
-		Network: string(s.cfg.Network),
+		// A job can't fence the network, whatever the configured default.
+		Network: "not enforced",
 		Enforced: []string{
 			"every process the command starts is killed with it",
 			"at most " + strconv.Itoa(s.cfg.MaxProcesses) + " processes",
@@ -68,7 +69,6 @@ func (s *jobSandbox) Info() Info {
 		in.Enforced = append(in.Enforced, "at most "+strconv.Itoa(s.cfg.MemoryMB)+" MB of memory")
 	}
 	if s.cfg.Network == NetworkOff {
-		in.Network = "not enforced"
 		in.NotEnforced = append(in.NotEnforced, "network off (Windows needs an AppContainer or firewall rule for this)")
 	} else {
 		in.NotEnforced = append(in.NotEnforced, "network policy")
