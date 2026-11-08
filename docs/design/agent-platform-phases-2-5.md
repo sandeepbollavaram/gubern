@@ -450,7 +450,12 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **Not done:** `run_command` (sub-agents) and Forge builds aren't wrapped. There is no Linux memory cap (needs cgroups), no seccomp, and no AppContainer spike yet.
 - **Network default:** stays "on" until M.4 makes it a per-run choice behind an approval; flipping it before that would break `go`/`npm` downloads silently.
 
+- **Commits:** `02a60f8` (server), `a3ead2b` + `ab38398` (dashboard), `45051d3` (app).
+- **Dashboard:** a Workspaces page with the folders (add, remove, missing folders flagged) and a sandbox card that shows what is and isn't enforced, word for word from the server. Checked in a browser in mock mode, including remove and phone width.
+- **App:** a sandbox badge in the agent composer, and a Sandbox panel in Operate.
+  - On the emulator, re-paired with the scratch server, both showed "Contained (Windows)" with the server's limits.
+
 **Next: the rest of M.** Remaining:
 - network policy per run (M.4);
-- the Workspaces page with the sandbox card, the run sandbox badge, and diffs in run detail;
+- wrapping `run_command` and Forge builds;
 - the AppContainer spike.
