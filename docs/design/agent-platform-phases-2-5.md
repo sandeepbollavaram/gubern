@@ -426,8 +426,15 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - The team tester runs commands through approvals.
 - The phone can resume a run; this was unit-tested, but not yet tried live on the device.
 
-**Next: M, the safe workspace runtime.** Workspaces are already done. Remaining:
-- git checkpoints per edit, with restore;
+**M.1: git checkpoints. Done.**
+- **Commits:** `26f204f` (server), `2be14ff` (dashboard), `5ff3c4a` (app).
+- **What it does:**
+  - hidden-ref snapshots before a run and after each change;
+  - per-step diffs;
+  - restore only after a HIGH-risk approval.
+- **Live check:** a file the agent rewrote was restored to its original content, and HEAD was untouched.
+
+**Next: the rest of M.** Remaining:
 - sandbox adapters for Linux and Windows;
 - network policy per run;
 - the escape suites;
