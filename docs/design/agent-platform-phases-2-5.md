@@ -512,6 +512,15 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 
 **Milestone M: done.** Production AppContainer support is M.8.
 
-**Next: Phase 5, N (MCP connectors).**
+**N: MCP connectors. Accepted with gaps.**
+- Design and status: `docs/design/mcp-connector-architecture.md`.
+- **Commits:** `ae6a512` (core), `dd69a86` (API and enable approval), `477930c` + `347c77c` (dashboard), `388c7e0` (resources).
+- **Uses** the official Go SDK v1.8.0, with stdio (sandboxed) and streamable HTTP (checked destinations).
+- **Tools** are named `mcp__<connector>__<tool>`. Calls are approval-gated through the shared service and bound to the connector version; read-only runs never get them.
+- **Results** are capped and labelled as third-party data.
+- **Tested:** 15 connector tests on Windows and Linux, an API authorization test, and a live check on the real server.
+- **Gaps:** no automatic reconnect, no LAN HTTP servers, Windows local connectors only contained, no prompts, no mobile screen.
+
+**Next: O (browser), which needs decision D5; or M.8 (AppContainer implementation).**
 
 Then Phase 5: N (MCP client and connectors).

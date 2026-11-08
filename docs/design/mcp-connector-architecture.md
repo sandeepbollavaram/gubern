@@ -36,9 +36,11 @@ is bound to it through the action hash).
 
 `add` stores a **disabled** connector. `enable` needs `system:manage` and,
 because it starts a program or opens a connection, an approval (HIGH risk)
-that shows the exact command and arguments or URL. Enabled connectors
-connect at start-up and on `reconnect`; a failure is recorded and retried
-with back-off, never fatal to the server. `disable` closes the session and
+that shows the exact command and arguments or URL; it is enabled only if
+the connector is still the approved version. Enabled connectors connect at
+start-up, after approval and on `reconnect`; a failure is recorded on the
+connector and is never fatal to the server. There is no automatic retry
+yet: a dropped local server stays down until `reconnect` (gap). `disable` closes the session and
 stops the process. `remove` disables and deletes the record and its
 credential references.
 
@@ -108,9 +110,10 @@ check.
 ## 9. Resources and prompts
 
 Resources are exposed as one read tool per connector,
-`mcp__<id>__read_resource`, with the same approval rules; contents are capped
-and labelled as untrusted. Prompts are listed for the dashboard only and are
-not injected into runs (they would be connector-authored instructions).
+`mcp__<id>__read_resource` (only when the server offers resources), with the
+same approval rules; contents are capped and labelled as untrusted, binary
+contents are not passed on. Prompts are not implemented: they would be
+connector-authored instructions, and nothing in a run needs them yet.
 
 ## 10. API
 
@@ -132,3 +135,27 @@ not injected into runs (they would be connector-authored instructions).
 Stated, not hidden: Linux local connectors are isolated; Windows local
 connectors are contained only (until M.8 AppContainer); HTTP connectors are
 the same everywhere.
+
+## 12. Status and evidence (2026-11-08)
+
+Implemented and tested: registry, stdio and streamable HTTP transports,
+discovery and normalization, namespacing, approval-gated calls bound to the
+connector version, `allow`/`ask`/`deny`, read-only exclusion, resources,
+credentials through the secret store, the API with scopes, the enable
+approval, the dashboard page. Commits `ae6a512`, `dd69a86`, `477930c`,
+`347c77c`, and the resources commit.
+
+Tests: `go test ./internal/connectors/` (15 tests, a fake server built from
+the SDK, run on Windows and on Linux as root and as nobody),
+`TestConnectors_Authorization` in `internal/api`. Live on the real server:
+add, approve enable, connect in the job-object sandbox, an `/agent` call
+asking a HIGH-risk approval, the model receiving the labelled output, a
+read-only run without the tool, reconnect after restart.
+
+Gaps: no automatic reconnect; HTTP connectors can't reach private-network
+(LAN) servers; Windows local connectors are contained, not isolated (M.8);
+no prompts; the dashboard was checked with mock data in a browser and the
+real API by script (no browser sign-in against the real server); the mobile
+app has no connector screen; approval denial, expiry and service-principal
+rules are the shared Approval Service's and its tests, not repeated per
+connector.

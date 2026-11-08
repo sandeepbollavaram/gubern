@@ -217,6 +217,17 @@ commands.
   each has a control showing the same action works where it is allowed.
   `run_command` (background sub-agents) and Forge builds use it too; on Linux
   Flutter builds stay unsandboxed (Flutter writes into its own SDK).
+- **MCP connectors** (`/api/mcp/connectors`) are untrusted tool providers.
+  A new connector is disabled; enabling it needs `system:manage` and a
+  HIGH-risk approval showing what runs. Every tool call asks the shared
+  Approval Service (bound to the arguments and the connector's version)
+  unless an operator sets that tool to `allow`; release builds always ask.
+  Read-only runs never get connector tools. Local servers run in the
+  command sandbox with a scrubbed environment; HTTP servers go through the
+  SSRF-safe dialer, https only (loopback for local), no redirects.
+  Descriptions, results and resources are labelled third-party data and
+  capped. Credentials live in the secret store, write-only through the API.
+  See `docs/design/mcp-connector-architecture.md`.
 - The **approval gate** is the primary control for machine-touching actions —
   keep it enabled for unattended runs.
 - **Skills** (`SKILL.md` files in the workspace) are read as instructions for
