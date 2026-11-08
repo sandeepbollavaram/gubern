@@ -396,6 +396,11 @@ Updated 2026-11-08 04:35 IST. Local commits only.
   - resume asked for the approval again, and the file was written exactly once;
   - a second resume was refused.
 
-**Next: L.3, checks declared in the submit API.** Then:
+**L.3: declared checks. Mostly done.**
+- **Server:** `b66fbfa`. The submit API takes a `check` field.
+- **Dashboard:** `becc4f9`. "Add check" in the Agent-mode composer, typechecked but not yet seen in a browser (the browser tool hit a usage limit).
+- **Remaining:** the same field in the app composer.
+
+**Next:** finish L.3 in the app. Then:
 - **L.4** team roles as loop profiles;
 - **L.5** the kill-9 harness.
