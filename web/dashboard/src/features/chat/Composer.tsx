@@ -82,7 +82,7 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
   const submit = (queue: boolean) => {
     const t = text.trim();
     if (!t) return;
-    onSend(t, { queue, check: mode === "agent" && showCheck ? check.trim() || undefined : undefined });
+    onSend(t, { queue, check: (mode === "agent" || mode === "team") && showCheck ? check.trim() || undefined : undefined });
     setText("");
   };
 
@@ -126,7 +126,7 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
           }}
           className="block w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-muted focus-visible:outline-none"
         />
-        {mode === "agent" && showCheck && (
+        {(mode === "agent" || mode === "team") && showCheck && (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
             <ListChecks className="h-4 w-4 shrink-0 text-success" aria-hidden />
             <label className="sr-only" htmlFor={`check-${draftKey}`}>
@@ -154,7 +154,7 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
           </div>
         )}
         <div className="mt-1 flex items-center gap-1">
-          {mode === "agent" && !showCheck && (
+          {(mode === "agent" || mode === "team") && !showCheck && (
             <button
               type="button"
               onClick={() => setShowCheck(true)}

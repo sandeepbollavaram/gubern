@@ -502,7 +502,7 @@ extension GubernReads on GubernApi {
     req.add(utf8.encode(jsonEncode({
       'message': mode.prefix + text,
       'session_id': sessionId,
-      if (mode == ChatMode.agent && c.isNotEmpty) 'check': c,
+      if ((mode == ChatMode.agent || mode == ChatMode.team) && c.isNotEmpty) 'check': c,
       if (workspace != null && workspace.isNotEmpty && workspace != 'default') 'workspace': workspace,
     })));
     final res = await req.close();

@@ -87,7 +87,7 @@ type agentSubmitRequest struct {
 // maxCheckLen bounds a declared completion check.
 const maxCheckLen = 500
 
-// applyCheck adds a declared completion check to an /agent message. The
+// applyCheck adds a declared completion check to an /agent or /team message. The
 // check goes through the same parsing (and, when it runs, the same approval)
 // as one typed with --check.
 func applyCheck(message, check string) (string, error) {
@@ -95,9 +95,15 @@ func applyCheck(message, check string) (string, error) {
 	if check == "" {
 		return message, nil
 	}
-	rest, ok := strings.CutPrefix(strings.TrimLeft(message, " "), "/agent ")
+	trimmed := strings.TrimLeft(message, " ")
+	cmd := "/agent "
+	rest, ok := strings.CutPrefix(trimmed, cmd)
 	if !ok {
-		return "", errors.New("check applies only to /agent messages")
+		cmd = "/team "
+		rest, ok = strings.CutPrefix(trimmed, cmd)
+	}
+	if !ok {
+		return "", errors.New("check applies only to /agent and /team messages")
 	}
 	if len(check) > maxCheckLen || strings.ContainsAny(check, "\"\r\n") {
 		return "", fmt.Errorf("check must be one line of at most %d characters without double quotes", maxCheckLen)
@@ -105,7 +111,7 @@ func applyCheck(message, check string) (string, error) {
 	if strings.Contains(" "+rest, " --check") {
 		return "", errors.New("the message already has --check; send one or the other")
 	}
-	return `/agent --check "` + check + `" ` + rest, nil
+	return cmd + `--check "` + check + `" ` + rest, nil
 }
 
 // agentSubmitResponse is the JSON (non-SSE) reply.

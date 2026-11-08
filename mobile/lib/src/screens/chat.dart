@@ -412,7 +412,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (t.isEmpty || _c.running) return;
     HapticFeedback.selectionClick();
     _input.clear();
-    final check = _mode == ChatMode.agent && _showCheck ? _check.text.trim() : '';
+    final check = (_mode == ChatMode.agent || _mode == ChatMode.team) && _showCheck ? _check.text.trim() : '';
     unawaited(_c.send(t, _mode, check: check.isEmpty ? null : check, workspace: _workspace));
   }
 
@@ -1103,7 +1103,7 @@ class _Composer extends StatelessWidget {
                   ],
                 ),
               ),
-              if (mode == ChatMode.agent)
+              if (mode == ChatMode.agent || mode == ChatMode.team)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: SizedBox(
@@ -1165,7 +1165,7 @@ class _Composer extends StatelessWidget {
               AnimatedSize(
                 duration: Motion.base,
                 curve: Motion.curve,
-                child: mode == ChatMode.agent && showCheck
+                child: (mode == ChatMode.agent || mode == ChatMode.team) && showCheck
                     ? Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: TextField(

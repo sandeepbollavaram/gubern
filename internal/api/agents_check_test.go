@@ -19,6 +19,7 @@ func TestApplyCheck(t *testing.T) {
 		{"/agent fix the build", "", "/agent fix the build", false},
 		{"/agent fix the build", "go test ./...", `/agent --check "go test ./..." fix the build`, false},
 		{"/agent --read-only look", "go vet ./...", `/agent --check "go vet ./..." --read-only look`, false},
+		{"/team add a flag", "go test ./...", `/team --check "go test ./..." add a flag`, false},
 		{"hello", "go test", "", true},                               // not an /agent run
 		{`/agent --check "make" fix`, "go test", "", true},           // two checks
 		{"/agent fix", `echo "hi"`, "", true},                        // quotes
