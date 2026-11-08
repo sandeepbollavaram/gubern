@@ -1,7 +1,8 @@
 # Windows AppContainer sandbox: feasibility and decision
 
-Milestone M, last item. Status: **researched and prototyped; not implemented
-in production code.** Evidence: `internal/sandbox/appcontainer_spike_windows_test.go`
+Milestone M, last item. Status: **implemented as an opt-in adapter (M.8,
+`agents.local_tools.sandbox.windows: "appcontainer"`); the default stays
+`job`.** Evidence: `internal/sandbox/appcontainer_spike_windows_test.go`
 (opt-in, `GUBERN_APPCONTAINER_SPIKE=1`) and its run log,
 `docs/design/evidence/appcontainer-spike-2026-11-08.txt`.
 
@@ -236,6 +237,37 @@ disposable folders under `D:\tmp\vortex-go`. Full log:
 Behind `agents.local_tools.sandbox.windows: "job" | "appcontainer"`,
 default `job` for one release; switch the default after the escape suite has
 run on Windows CI and on at least one real workstation with a VPN resolver.
+
+## 17a. Implementation (M.8, 2026-11-08)
+
+`internal/sandbox/appcontainer_windows.go`, chosen with
+`sandbox.windows: "appcontainer"` (or `GUBERN_AGENTS_LOCAL_TOOLS_SANDBOX_WINDOWS`):
+
+- one profile per workspace (`gubern.ws.<hash>`); a lowbox token per command
+  with `internetClient` only when the run's network is on;
+- grants: workspace and private home `M`, read paths and the program's folder
+  `RX` (not needed under Program Files or System32), recorded in
+  `appcontainer-grants.log` next to the private home;
+- `TEMP`, `TMP`, `USERPROFILE` and `HOME` point into the private home;
+- composed with the Job Object (tree kill, process and memory caps);
+- `CREATE_NO_WINDOW`: found in the live check. A server started without a
+  console gives each child a new console, whose host can't start inside the
+  AppContainer, so `cmd.exe` failed with `STATUS_DLL_INIT_FAILED`. The spike
+  missed it because its helpers were Go programs, which don't load user32.
+- Info reports "Isolated (Windows)" and names a loopback DNS resolver when
+  the host has one.
+
+Tests (`appcontainer_windows_test.go`): file fence with controls (workspace
+read/write; writes outside, path traversal, System32 and reads of an outside
+secret denied; a link out doesn't open the target), network (off: no
+internet; on: loopback still closed, internet reachable), job and box
+together, process cap, TEMP. Removing the token makes the file and network
+tests fail. Live on the real server: a `run_terminal` command wrote in the
+workspace and got "Access is denied" reading a file outside it.
+
+Still open: registry, named pipes and COM behaviour; grant removal when a
+workspace is removed; Flutter; LAN with `privateNetworkClientServer`; the
+default switch (rollout below).
 
 ## 18. Test strategy
 

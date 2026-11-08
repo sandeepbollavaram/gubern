@@ -186,6 +186,9 @@ package vortex
 #Sandbox: {
 	mode:          *"auto" | "required" | "off"
 	network:       *"on" | "off"
+	// windows picks the Windows adapter: "job" contains commands (tree kill,
+	// caps); "appcontainer" also fences files and network (M.8).
+	windows: *"job" | "appcontainer"
 	max_processes: int & >=8 & <=65536 | *256
 	// memory_mb caps the whole process tree (Windows); 0 means no cap.
 	memory_mb: int & >=0 | *8192

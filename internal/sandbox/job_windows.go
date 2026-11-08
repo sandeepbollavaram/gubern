@@ -48,7 +48,11 @@ func newPlatform(cfg Config) (Sandbox, error) {
 		return nil, fmt.Errorf("%w: CreateJobObject: %v", ErrUnavailable, err)
 	}
 	_ = windows.CloseHandle(j)
-	return &jobSandbox{cfg: cfg}, nil
+	job := &jobSandbox{cfg: cfg}
+	if cfg.Windows == "appcontainer" {
+		return newAppContainer(cfg, job)
+	}
+	return job, nil
 }
 
 func (s *jobSandbox) Info() Info {

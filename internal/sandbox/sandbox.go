@@ -134,6 +134,9 @@ var ErrUnavailable = errors.New("sandbox unavailable")
 type Config struct {
 	Mode    Mode
 	Network Network
+	// Windows picks the Windows adapter: "job" (default; containment) or
+	// "appcontainer" (isolation; see docs/design/windows-appcontainer-sandbox.md).
+	Windows string
 	Limits
 }
 
@@ -165,6 +168,11 @@ func New(cfg Config) (Sandbox, Info, error) {
 	case NetworkOn, NetworkOff:
 	default:
 		return nil, Info{}, fmt.Errorf("sandbox network %q: want on or off", cfg.Network)
+	}
+	switch cfg.Windows {
+	case "", "job", "appcontainer":
+	default:
+		return nil, Info{}, fmt.Errorf("sandbox windows %q: want job or appcontainer", cfg.Windows)
 	}
 	if cfg.Mode == ModeOff {
 		return nil, noneInfo(cfg, "turned off in agents.local_tools.sandbox"), nil

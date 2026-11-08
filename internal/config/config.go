@@ -174,6 +174,7 @@ type LocalTools struct {
 type Sandbox struct {
 	Mode         string   `json:"mode"`
 	Network      string   `json:"network"`
+	Windows      string   `json:"windows"`
 	MaxProcesses int      `json:"max_processes"`
 	MemoryMB     int      `json:"memory_mb"`
 	ReadPaths    []string `json:"read_paths"`

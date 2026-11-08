@@ -317,7 +317,7 @@ func resolveLocalFSConfig(cfg *config.Config, workDir string) (agents.LocalFSCon
 	fs.Policy = policy
 	sb := cfg.Agents.LocalTools.Sandbox
 	fs.SandboxConfig = sandbox.Config{
-		Mode: sandbox.Mode(sb.Mode), Network: sandbox.Network(sb.Network),
+		Mode: sandbox.Mode(sb.Mode), Network: sandbox.Network(sb.Network), Windows: sb.Windows,
 		Limits: sandbox.Limits{MaxProcesses: sb.MaxProcesses, MemoryMB: sb.MemoryMB, ReadPaths: sb.ReadPaths,
 			// Tool caches (Go modules, npm) survive between commands without
 			// showing the command the user's real home.

@@ -282,6 +282,12 @@ agents: local_tools: sandbox: {
 }
 ```
 
+With `windows: "appcontainer"` (opt-in, M.8) Windows commands also run in an
+AppContainer: only the workspace and a private home are writable, other
+folders can't be read, network is off unless the run's network is on (then
+the public internet only, never loopback). Program Files and System32 stay
+readable, as Windows grants every AppContainer.
+
 | | Linux (bubblewrap) | Windows (Job Object) | macOS |
 |---|---|---|---|
 | Label | Isolated (Linux) | Contained (Windows) | Not sandboxed |
