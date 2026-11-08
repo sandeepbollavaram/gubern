@@ -110,6 +110,57 @@ export interface SkillInstall {
   files: { path: string; size: number; sha256: string }[];
 }
 
+export type ToolPolicy = "ask" | "allow" | "deny";
+
+export interface ConnectorTool {
+  name: string;
+  /** What agents see: mcp__<connector>__<tool>. */
+  fullName: string;
+  title?: string;
+  /** Written by the connector's server: third-party text. */
+  description: string;
+  policy: ToolPolicy;
+  available: boolean;
+  problem?: string;
+}
+
+export interface ConnectorInput {
+  id: string;
+  name?: string;
+  description?: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  network?: "on" | "off";
+  secretEnv?: Record<string, string>;
+  url?: string;
+  local?: boolean;
+  bearerSecret?: string;
+}
+
+export interface Connector extends ConnectorInput {
+  name: string;
+  enabled: boolean;
+  trust: string;
+  version: number;
+  createdAt: string;
+  lastConnected?: string;
+  lastError?: string;
+  /** Credential names it uses, and whether each is set (never values). */
+  secretsSet: Record<string, boolean>;
+  status: {
+    state: "disabled" | "connecting" | "connected" | "error";
+    server?: string;
+    serverVersion?: string;
+    protocol?: string;
+    sandbox?: string;
+    error?: string;
+    stderr?: string;
+    tools: ConnectorTool[];
+  };
+}
+
 export interface WorkspaceEntry {
   name: string;
   path: string;
@@ -246,6 +297,17 @@ export interface GubernClient {
   outputs(): Promise<Output[]>;
   models(): Promise<ModelInfo[]>;
   workspaces(): Promise<string[]>;
+  /** MCP connectors (Phase 5): external tool providers, never trusted. */
+  connectors(): Promise<Connector[]>;
+  addConnector(c: ConnectorInput): Promise<Connector>;
+  /** Asks to enable a connector; it connects once the approval is granted. */
+  enableConnector(id: string): Promise<{ approvalId: string }>;
+  disableConnector(id: string): Promise<void>;
+  reconnectConnector(id: string): Promise<Connector>;
+  removeConnector(id: string): Promise<void>;
+  setConnectorToolPolicy(id: string, tool: string, policy: ToolPolicy): Promise<void>;
+  /** Write-only: the value is never returned. */
+  setConnectorSecret(id: string, name: string, value: string): Promise<void>;
   /** The workspace folders with their paths, and the sandbox commands run in (Phase 4). */
   workspaceList(): Promise<WorkspaceList>;
   /** Stops offering a workspace to runs (the folder itself is untouched). */

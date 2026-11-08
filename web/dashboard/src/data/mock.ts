@@ -3,6 +3,7 @@
 // (one decided "in Telegram"), clarifying questions and a multi-step run so
 // every flow in the UX spec can be clicked through without a server.
 import type {
+  Connector,
   Approval,
   AttentionItem,
   GubernClient,
@@ -20,6 +21,7 @@ import type {
 } from "./model";
 
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
 const now = () => Date.now();
 let seq = 100;
 const nextId = (p: string) => `${p}-${++seq}`;
@@ -484,6 +486,57 @@ function attentionItems(): AttentionItem[] {
 
 const mockWorkspaces = ["~/gubern", "~/projects/app", "~/projects/site"];
 
+const mockConnectors: Connector[] = [
+  {
+    id: "github",
+    name: "GitHub",
+    description: "Issues and pull requests for the team's repositories.",
+    transport: "http",
+    url: "https://mcp.example.com/github",
+    bearerSecret: "token",
+    enabled: true,
+    trust: "untrusted",
+    version: 3,
+    createdAt: new Date(t0 - 3 * DAY).toISOString(),
+    lastConnected: new Date(t0 - 5 * MIN).toISOString(),
+    secretsSet: { token: true },
+    status: {
+      state: "connected",
+      server: "github-mcp",
+      serverVersion: "2.4.0",
+      protocol: "2026-07-28",
+      sandbox: "remote",
+      tools: [
+        { name: "list_issues", fullName: "mcp__github__list_issues", description: "List open issues in a repository.", policy: "allow", available: true },
+        { name: "create_issue", fullName: "mcp__github__create_issue", description: "Open a new issue.", policy: "ask", available: true },
+        { name: "delete_repo", fullName: "mcp__github__delete_repo", description: "Delete a repository.", policy: "deny", available: true },
+        {
+          name: "search_code",
+          fullName: "mcp__github__search_code",
+          description: "Search code with filters.",
+          policy: "ask",
+          available: false,
+          problem: "input schema: property \"filters\": arrays of \"object\" aren't supported",
+        },
+      ],
+    },
+  },
+  {
+    id: "files",
+    name: "Local files",
+    transport: "stdio",
+    command: "/usr/local/bin/mcp-files",
+    args: ["--root", "/srv/shared"],
+    network: "off",
+    enabled: false,
+    trust: "untrusted",
+    version: 1,
+    createdAt: new Date(t0 - DAY).toISOString(),
+    secretsSet: {},
+    status: { state: "disabled", tools: [] },
+  },
+];
+
 const mockSkills: Skill[] = [
   {
     name: "gubern-dev-checks",
@@ -529,6 +582,48 @@ export const mockClient: GubernClient = {
       { id: "llama3.1:8b", label: "Llama 3.1 8B", purpose: "Runs locally through Ollama; no cost", provider: "Ollama" },
     ]),
   workspaces: () => delay([...mockWorkspaces]),
+  connectors: () => delay(structuredClone(mockConnectors)),
+  addConnector: (c) => {
+    const added: Connector = {
+      ...c,
+      name: c.name || c.id,
+      enabled: false,
+      trust: "untrusted",
+      version: 1,
+      createdAt: new Date().toISOString(),
+      secretsSet: Object.fromEntries([...Object.values(c.secretEnv ?? {}), ...(c.bearerSecret ? [c.bearerSecret] : [])].map((n) => [n, false])),
+      status: { state: "disabled", tools: [] },
+    };
+    mockConnectors.push(added);
+    emit();
+    return delay(added);
+  },
+  enableConnector: () => delay({ approvalId: "ap-mcp-enable" }),
+  disableConnector: (id) => {
+    const c = mockConnectors.find((x) => x.id === id);
+    if (c) Object.assign(c, { enabled: false, status: { state: "disabled", tools: [] } });
+    emit();
+    return delay(undefined);
+  },
+  reconnectConnector: (id) => delay(structuredClone(mockConnectors.find((x) => x.id === id)!)),
+  removeConnector: (id) => {
+    const i = mockConnectors.findIndex((x) => x.id === id);
+    if (i >= 0) mockConnectors.splice(i, 1);
+    emit();
+    return delay(undefined);
+  },
+  setConnectorToolPolicy: (id, tool, policy) => {
+    const t = mockConnectors.find((x) => x.id === id)?.status.tools.find((x) => x.name === tool);
+    if (t) t.policy = policy;
+    emit();
+    return delay(undefined);
+  },
+  setConnectorSecret: (id, name) => {
+    const c = mockConnectors.find((x) => x.id === id);
+    if (c) c.secretsSet[name] = true;
+    emit();
+    return delay(undefined);
+  },
   workspaceList: () =>
     delay({
       workspaces: mockWorkspaces.map((name, i) => ({

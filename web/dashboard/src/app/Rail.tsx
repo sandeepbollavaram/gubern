@@ -4,6 +4,7 @@ import {
   Activity,
   Blocks,
   BookOpen,
+  Plug,
   ChevronDown,
   FolderKanban,
   HeartPulse,
@@ -286,6 +287,7 @@ export function Rail() {
         <NavItem to="/outputs" icon={Sparkles} label="Outputs" collapsed={collapsed} />
         <NavItem to="/automations" icon={Timer} label="Automations" collapsed={collapsed} />
         <NavItem to="/skills" icon={BookOpen} label="Skills" collapsed={collapsed} />
+        <NavItem to="/connectors" icon={Plug} label="Connectors" collapsed={collapsed} />
 
         <Group label="Operate" collapsed={collapsed}>
           <NavItem to="/operate" end icon={LayoutDashboard} label="Overview" collapsed={collapsed} />

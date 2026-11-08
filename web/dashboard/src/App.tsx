@@ -14,6 +14,7 @@ const ChatPage = lazy(() => import("./features/chat/ChatPage").then((m) => ({ de
 const Inbox = lazy(() => import("./features/inbox/Inbox").then((m) => ({ default: m.Inbox })));
 const Outputs = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Outputs })));
 const Workspaces = lazy(() => import("./features/library/Workspaces").then((m) => ({ default: m.Workspaces })));
+const Connectors = lazy(() => import("./features/library/Connectors").then((m) => ({ default: m.Connectors })));
 const Skills = lazy(() => import("./features/library/Skills").then((m) => ({ default: m.Skills })));
 const Automations = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Automations })));
 
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="outputs" element={<Outputs />} />
             <Route path="automations" element={<Automations />} />
             <Route path="skills" element={<Skills />} />
+            <Route path="connectors" element={<Connectors />} />
             <Route path="workspaces" element={<Workspaces />} />
 
             <Route path="operate">

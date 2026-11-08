@@ -12,6 +12,9 @@ import type {
   ModelInfo,
   Output,
   RunCheckpoint,
+  Connector,
+  ConnectorInput,
+  ToolPolicy,
   SandboxInfo,
   WorkspaceList,
   Skill,
@@ -75,6 +78,92 @@ export interface WireEvent {
   text?: string;
   skill_hash?: string;
   at?: number;
+}
+
+interface WireConnector {
+  id: string;
+  name: string;
+  description?: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  network?: "on" | "off";
+  secret_env?: Record<string, string>;
+  url?: string;
+  local?: boolean;
+  bearer_secret?: string;
+  enabled: boolean;
+  trust: string;
+  version: number;
+  created_at: string;
+  last_connected?: string;
+  last_error?: string;
+  secrets_set?: Record<string, boolean>;
+  status: {
+    state: Connector["status"]["state"];
+    server?: string;
+    server_version?: string;
+    protocol?: string;
+    sandbox?: string;
+    error?: string;
+    stderr?: string;
+    tools: { name: string; full_name: string; title?: string; description: string; policy: ToolPolicy; available: boolean; problem?: string }[] | null;
+  };
+}
+
+function connectorFromWire(w: WireConnector): Connector {
+  return {
+    id: w.id,
+    name: w.name,
+    description: w.description,
+    transport: w.transport,
+    command: w.command,
+    args: w.args,
+    env: w.env,
+    network: w.network,
+    secretEnv: w.secret_env,
+    url: w.url,
+    local: w.local,
+    bearerSecret: w.bearer_secret,
+    enabled: w.enabled,
+    trust: w.trust,
+    version: w.version,
+    createdAt: w.created_at,
+    lastConnected: w.last_connected && !w.last_connected.startsWith("0001") ? w.last_connected : undefined,
+    lastError: w.last_error || undefined,
+    secretsSet: w.secrets_set ?? {},
+    status: {
+      state: w.status.state,
+      server: w.status.server,
+      serverVersion: w.status.server_version,
+      protocol: w.status.protocol,
+      sandbox: w.status.sandbox,
+      error: w.status.error,
+      stderr: w.status.stderr,
+      tools: (w.status.tools ?? []).map((t) => ({
+        name: t.name,
+        fullName: t.full_name,
+        title: t.title,
+        description: t.description,
+        policy: t.policy,
+        available: t.available,
+        problem: t.problem,
+      })),
+    },
+  };
+}
+
+function connectorToWire(c: ConnectorInput) {
+  return {
+    id: c.id,
+    ...(c.name ? { name: c.name } : {}),
+    ...(c.description ? { description: c.description } : {}),
+    transport: c.transport,
+    ...(c.transport === "stdio"
+      ? { command: c.command, args: c.args ?? [], env: c.env ?? {}, network: c.network ?? "off", secret_env: c.secretEnv ?? {} }
+      : { url: c.url, local: !!c.local, ...(c.bearerSecret ? { bearer_secret: c.bearerSecret } : {}) }),
+  };
 }
 
 interface WireSkill {
@@ -373,6 +462,51 @@ class HttpClient implements GubernClient {
     const names = b.workspaces.filter((w) => w.exists).map((w) => w.name);
     this.workspaceNames = new Set(names);
     return names.length ? names : ["default"];
+  };
+
+  connectors = async (): Promise<Connector[]> =>
+    (await apiJSON<{ connectors: WireConnector[] }>("/api/mcp/connectors")).connectors.map(connectorFromWire);
+
+  addConnector = async (c: ConnectorInput): Promise<Connector> =>
+    connectorFromWire(
+      await apiJSON<WireConnector>("/api/mcp/connectors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(connectorToWire(c)),
+      }),
+    );
+
+  enableConnector = async (id: string) => {
+    const b = await apiJSON<{ approval_id: string }>(`/api/mcp/connectors/${encodeURIComponent(id)}/enable`, { method: "POST" });
+    this.changed();
+    return { approvalId: b.approval_id };
+  };
+
+  private connectorVoid = async (method: string, path: string, body?: unknown) => {
+    const res = await authFetch(path, {
+      method,
+      ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    });
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new HttpError(path, res.status, undefined, b.error);
+    }
+  };
+
+  disableConnector = (id: string) => this.connectorVoid("POST", `/api/mcp/connectors/${encodeURIComponent(id)}/disable`);
+  removeConnector = (id: string) => this.connectorVoid("DELETE", `/api/mcp/connectors/${encodeURIComponent(id)}`);
+  setConnectorToolPolicy = (id: string, tool: string, policy: ToolPolicy) =>
+    this.connectorVoid("PUT", `/api/mcp/connectors/${encodeURIComponent(id)}/tools/${encodeURIComponent(tool)}/policy`, { policy });
+  setConnectorSecret = (id: string, name: string, value: string) =>
+    this.connectorVoid("PUT", `/api/mcp/connectors/${encodeURIComponent(id)}/secrets/${encodeURIComponent(name)}`, { value });
+
+  reconnectConnector = async (id: string): Promise<Connector> => {
+    const path = `/api/mcp/connectors/${encodeURIComponent(id)}/reconnect`;
+    const res = await authFetch(path, { method: "POST" });
+    const b = (await res.json().catch(() => ({}))) as WireConnector & { error?: string; connector?: WireConnector };
+    if (res.status === 502 && b.connector) return connectorFromWire(b.connector);
+    if (!res.ok) throw new HttpError(path, res.status, undefined, b.error);
+    return connectorFromWire(b);
   };
 
   workspaceList = async (): Promise<WorkspaceList> => {
