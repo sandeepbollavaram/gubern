@@ -136,6 +136,30 @@ sessions and rejects anything else, so a task needing other approvals simply
 fails. The skill's on/off state is restored afterwards. The result is only
 as meaningful as the model the server uses.
 
+#### Team mode: coder, tester, reviewer
+
+`/team [--check "<command>"] <goal>` runs three role profiles in turn on the
+same loop as `/agent`, with the same tools, policy, approvals, audit and run
+events:
+
+| Role | Tools | Job |
+|---|---|---|
+| Coder | All local tools | Makes the change |
+| Tester | Read tools, `git_status`, `git_diff`, `run_terminal` | Runs the tests and reports with evidence; no edits |
+| Reviewer | Read-only | Reviews the change and ends with `VERDICT: APPROVE` or `VERDICT: CHANGES REQUESTED` |
+
+A tool outside a role's set is refused ("not available to this role").
+
+With `--check`, the tester's run must make the check pass. The team ends:
+
+- `completed` when the check passes and the reviewer approves;
+- `partial` when the check fails or the reviewer requests changes;
+- `done` when no check was given (unverified).
+
+This replaces the separate specialist pipeline, whose tester could not run
+commands. That pipeline is still used only when no local tools are
+configured.
+
 ### Gubern Forge — autonomous app builds
 
 Forge builds complete apps (and Android APKs) from a prompt, in a sandbox, and

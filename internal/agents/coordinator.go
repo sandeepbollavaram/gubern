@@ -1411,6 +1411,17 @@ func (c *Coordinator) handleMessageInner(caller context.Context, userMsg, sessio
 	// real files, instead of the orchestration engine that leaked internals.
 	if goal, isTeam := strings.CutPrefix(strings.TrimSpace(userMsg), "/team "); isTeam {
 		goal = strings.TrimSpace(goal)
+		// Team mode runs on the one loop (coder, tester, reviewer profiles),
+		// under the same approvals as /agent; like /agent it follows the
+		// caller.
+		if c.cfg.LocalTools != nil && c.cfg.AIGateway != nil {
+			if caller == nil {
+				caller = context.Background()
+			}
+			tctx, tcancel := context.WithTimeout(caller, 3*AgentRunTimeout)
+			defer tcancel()
+			return c.handleTeamLoop(tctx, sessionID, goal, sf)
+		}
 		if team, on := c.teamHandler(); on && team != nil {
 			return c.handleTeamTask(ctx, team, goal, sessionID, nil)
 		}
@@ -1438,6 +1449,14 @@ func (c *Coordinator) handleMessageInner(caller context.Context, userMsg, sessio
 	// Specialist team mode (agent teams): a complex coding task is run through
 	// the coder → tester → reviewer pipeline instead of the single-agent path.
 	if team, on := c.teamHandler(); on && team != nil && shouldUseTeam(userMsg) {
+		if c.cfg.LocalTools != nil && c.cfg.AIGateway != nil {
+			if caller == nil {
+				caller = context.Background()
+			}
+			tctx, tcancel := context.WithTimeout(caller, 3*AgentRunTimeout)
+			defer tcancel()
+			return c.handleTeamLoop(tctx, sessionID, userMsg, sf)
+		}
 		return c.handleTeamTask(ctx, team, userMsg, sessionID, nil)
 	}
 

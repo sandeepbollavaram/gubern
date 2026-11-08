@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,6 +48,9 @@ type LoopConfig struct {
 	// ReadOnly offers the model only read tools (risk class "read"): no
 	// writes, commands or git changes. Anything else it asks for is refused.
 	ReadOnly bool
+	// AllowTools, when set, is the only tools offered (a team role's
+	// toolset); anything else the model asks for is refused.
+	AllowTools []string
 	// SkillFiles maps catalogued SKILL.md paths (see SkillKey) to the skill,
 	// so reading one is recorded as skill use in the audit log.
 	SkillFiles map[string]SkillRef
@@ -166,6 +170,9 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 	if cfg.Tools != nil {
 		for _, s := range cfg.Tools.Specs() {
 			if cfg.ReadOnly && (s.Risk != RiskRead || s.SideEffect) {
+				continue
+			}
+			if len(cfg.AllowTools) > 0 && !slices.Contains(cfg.AllowTools, s.Name) {
 				continue
 			}
 			specs[s.Name] = s
@@ -334,6 +341,14 @@ func runLoopCall(ctx context.Context, cfg LoopConfig, specs map[string]ToolSpec,
 	step := LoopStep{Tool: call.Name, Args: call.Arguments}
 	spec, ok := specs[call.Name]
 	if !ok {
+		if len(cfg.AllowTools) > 0 && cfg.Tools != nil && !toolDenied(cfg.Tools, call.Name) {
+			if _, err := cfg.Tools.Get(call.Name); err == nil {
+				loopAudit(ctx, cfg, "agent.policy.denied", call.Name, map[string]any{"via": "role"})
+				step.Outcome, step.Observed = "denied", fmt.Sprintf("error: %s is not available to this role", call.Name)
+				emit("⛔ " + call.Name + " is not available to this role")
+				return step
+			}
+		}
 		if cfg.ReadOnly && cfg.Tools != nil {
 			if _, err := cfg.Tools.Get(call.Name); err == nil {
 				loopAudit(ctx, cfg, "agent.policy.denied", call.Name, map[string]any{"via": "read-only"})
