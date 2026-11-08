@@ -1100,58 +1100,68 @@ class _Composer extends StatelessWidget {
                           onMode(m);
                         }),
                       ),
-                    if (mode == ChatMode.agent && onPickWorkspace != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: Semantics(
+                  ],
+                ),
+              ),
+              if (mode == ChatMode.agent)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: SizedBox(
+                    height: 32,
+                    child: Row(
+                      children: [
+                      if (onPickWorkspace != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Semantics(
+                            button: true,
+                            label: 'Workspace $workspace',
+                            child: GestureDetector(
+                              onTap: onPickWorkspace,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: g.border)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.folder_outlined, size: 15, color: g.muted),
+                                    const SizedBox(width: 6),
+                                    Text(workspace, style: mono(context, size: 12.5, color: g.text)),
+                                    Icon(Icons.expand_more_rounded, size: 16, color: g.muted),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Semantics(
                           button: true,
-                          label: 'Workspace $workspace',
+                          selected: showCheck,
+                          label: 'Completion check',
                           child: GestureDetector(
-                            onTap: onPickWorkspace,
+                            onTap: onToggleCheck,
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10),
-                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: g.border)),
+                              decoration: BoxDecoration(
+                                color: showCheck ? g.ok.withValues(alpha: .12) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: showCheck ? g.ok.withValues(alpha: .5) : g.border),
+                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.folder_outlined, size: 15, color: g.muted),
+                                  Icon(Icons.fact_check_outlined, size: 15, color: showCheck ? g.ok : g.muted),
                                   const SizedBox(width: 6),
-                                  Text(workspace, style: mono(context, size: 12.5, color: g.text)),
-                                  Icon(Icons.expand_more_rounded, size: 16, color: g.muted),
+                                  Text('Check', style: TextStyle(fontSize: 13, color: showCheck ? g.text : g.muted)),
                                 ],
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    if (mode == ChatMode.agent)
-                      Semantics(
-                        button: true,
-                        selected: showCheck,
-                        label: 'Completion check',
-                        child: GestureDetector(
-                          onTap: onToggleCheck,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: showCheck ? g.ok.withValues(alpha: .12) : Colors.transparent,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: showCheck ? g.ok.withValues(alpha: .5) : g.border),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.fact_check_outlined, size: 15, color: showCheck ? g.ok : g.muted),
-                                const SizedBox(width: 6),
-                                Text('Check', style: TextStyle(fontSize: 13, color: showCheck ? g.text : g.muted)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
               AnimatedSize(
                 duration: Motion.base,
                 curve: Motion.curve,
