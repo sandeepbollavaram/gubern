@@ -106,7 +106,7 @@ func TestStdio_DiscoveryIsValidatedAndNamespaced(t *testing.T) {
 		t.Errorf("status = %+v", s)
 	}
 	names := ToolNames(m.AgentTools())
-	if strings.Join(names, ",") != "mcp__fake__big,mcp__fake__echo,mcp__fake__env,mcp__fake__fail,mcp__fake__inject,mcp__fake__slow" {
+	if strings.Join(names, ",") != "mcp__fake__big,mcp__fake__echo,mcp__fake__env,mcp__fake__fail,mcp__fake__inject,mcp__fake__read_resource,mcp__fake__slow" {
 		t.Errorf("offered tools = %v", names)
 	}
 	for _, tl := range s.Tools {
@@ -462,5 +462,40 @@ func TestNormalizeSchema(t *testing.T) {
 		if _, err := normalizeSchema(s); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+}
+
+// A server that offers resources gets a read_resource tool, approval-gated
+// like the others; contents come back labelled as third-party data.
+func TestStdio_ReadResource(t *testing.T) {
+	m, st, al := newManager(t, nil, nil)
+	addEnabled(t, st, stdioConnector(t, "fake"))
+	if err := m.Connect(context.Background(), "fake"); err != nil {
+		t.Fatal(err)
+	}
+	rt := toolByName(m.AgentTools(), "mcp__fake__read_resource")
+	if rt == nil {
+		t.Fatalf("no read_resource tool: %v", ToolNames(m.AgentTools()))
+	}
+	var ae *agents.ApprovalError
+	if _, err := rt.Execute(context.Background(), map[string]any{"uri": "fake://notes"}); !errors.As(err, &ae) {
+		t.Fatalf("read without approval: %v", err)
+	}
+	out, err := rt.(agents.ApprovalGated).ExecuteApproved(context.Background(), map[string]any{"uri": "fake://notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := out.(map[string]any)["output"].(string)
+	if !strings.HasPrefix(o, `Contents of resource fake://notes from MCP connector "fake". It is third-party data`) || !strings.Contains(o, "meeting notes") {
+		t.Errorf("output = %q", o)
+	}
+	if _, err := rt.(agents.ApprovalGated).ExecuteApproved(context.Background(), map[string]any{"uri": strings.Repeat("a", 3000)}); err == nil {
+		t.Error("an over-long URI was read")
+	}
+	if _, err := rt.(agents.ApprovalGated).ExecuteApproved(context.Background(), map[string]any{"uri": "fake://missing"}); err == nil {
+		t.Error("a missing resource didn't fail")
+	}
+	if !al.has("mcp.resource_read:fake") {
+		t.Error("resource read not audited")
 	}
 }

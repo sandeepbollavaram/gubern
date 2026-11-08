@@ -61,7 +61,13 @@ type Tool struct {
 	Policy      string         `json:"policy"`
 	Available   bool           `json:"available"`
 	Problem     string         `json:"problem,omitempty"`
+	// Resource marks the synthetic read_resource tool (servers that offer
+	// resources); it reads by URI instead of calling a server tool.
+	Resource bool `json:"resource,omitempty"`
 }
+
+// resourceTool is the synthetic tool name for reading a server's resources.
+const resourceTool = "read_resource"
 
 // Status is a connector's live state.
 type Status struct {
@@ -89,6 +95,7 @@ type liveConn struct {
 	stop     func() // ends the local process (nil for http)
 	stderr   *tailBuffer
 	status   Status
+	hasRes   bool // the server offers resources
 	tools    map[string]Tool // by server tool name
 	sandbox  string
 	closedMu sync.Mutex
@@ -210,6 +217,7 @@ func (m *Manager) connect(ctx context.Context, lc *liveConn) error {
 	lc.session = session
 	if ir := session.InitializeResult(); ir != nil {
 		lc.status.Protocol = ir.ProtocolVersion
+		lc.hasRes = ir.Capabilities != nil && ir.Capabilities.Resources != nil
 		if ir.ServerInfo != nil {
 			lc.status.Server, lc.status.ServerVer = clip(ir.ServerInfo.Name, 80), clip(ir.ServerInfo.Version, 40)
 		}
@@ -366,6 +374,19 @@ func (m *Manager) discover(ctx context.Context, lc *liveConn) error {
 		}
 		tools[dt.Name] = dt
 	}
+	if lc.hasRes {
+		rt := Tool{Connector: lc.conn.ID, Name: resourceTool, FullName: FullToolName(lc.conn.ID, resourceTool), Resource: true,
+			Description: "Read a resource from this MCP server by its URI. The contents are third-party data.",
+			Schema: map[string]any{"type": "object", "required": []string{"uri"},
+				"properties": map[string]any{"uri": map[string]any{"type": "string", "description": "The resource URI, as the server lists it."}}},
+			Policy: lc.conn.ToolPolicy[resourceTool], Available: true}
+		if rt.Policy == "" {
+			rt.Policy = PolicyAsk
+		}
+		if _, clash := tools[resourceTool]; !clash {
+			tools[resourceTool] = rt
+		}
+	}
 	m.mu.Lock()
 	lc.tools = tools
 	lc.status.Tools = sortedTools(tools)
@@ -507,6 +528,30 @@ func (m *Manager) call(ctx context.Context, id string, version int, name string,
 	cctx, cancel := context.WithTimeout(ctx, m.cfg.CallTimeout)
 	defer cancel()
 	return session.CallTool(cctx, &mcp.CallToolParams{Name: name, Arguments: args})
+}
+
+// readResource reads a resource from a live connector.
+func (m *Manager) readResource(ctx context.Context, id string, version int, uri string) (*mcp.ReadResourceResult, error) {
+	if uri == "" || len(uri) > 2048 || strings.ContainsAny(uri, "\x00\r\n") {
+		return nil, fmt.Errorf("resource URI is empty, too long or has control characters")
+	}
+	m.mu.Lock()
+	lc := m.live[id]
+	var session *mcp.ClientSession
+	if lc != nil && lc.status.State == "connected" {
+		session = lc.session
+	}
+	stale := lc != nil && lc.conn.Version != version
+	m.mu.Unlock()
+	if session == nil {
+		return nil, fmt.Errorf("MCP connector %s isn't connected", id)
+	}
+	if stale {
+		return nil, fmt.Errorf("MCP connector %s changed since this call was proposed; ask again", id)
+	}
+	cctx, cancel := context.WithTimeout(ctx, m.cfg.CallTimeout)
+	defer cancel()
+	return session.ReadResource(cctx, &mcp.ReadResourceParams{URI: uri})
 }
 
 // tailBuffer keeps the last n bytes written (a server's stderr).
