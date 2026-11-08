@@ -396,11 +396,18 @@ Updated 2026-11-08 04:35 IST. Local commits only.
   - resume asked for the approval again, and the file was written exactly once;
   - a second resume was refused.
 
-**L.3: declared checks. Mostly done.**
-- **Server:** `b66fbfa`. The submit API takes a `check` field.
-- **Dashboard:** `becc4f9`. "Add check" in the Agent-mode composer, typechecked but not yet seen in a browser (the browser tool hit a usage limit).
-- **Remaining:** the same field in the app composer.
+**L.3: declared checks. Done.**
+- **Commits:** `b66fbfa` (server), `becc4f9` (dashboard), `ac90af7` (app).
 
-**Next:** finish L.3 in the app. Then:
+**Workspaces: done.** Brought forward from M at your request.
+- **Commits:** `2683f61` (server), `15d0731` (dashboard), `56cf508` (app).
+- **What it does:**
+  - `/agent` runs can work in any of several folders: the default plus ones an admin adds;
+  - clients pick by name;
+  - with a `trusted_root` configured, a workspace must lie inside it.
+- **Live check:** a relative write landed in the chosen folder, not the default one.
+- **Not verified:** the dashboard and app pickers in a browser or on the emulator. The browser tool hit a usage limit and `adb` stopped responding.
+
+**Next:**
 - **L.4** team roles as loop profiles;
 - **L.5** the kill-9 harness.
