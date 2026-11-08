@@ -521,6 +521,16 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **Tested:** 15 connector tests on Windows and Linux, an API authorization test, and a live check on the real server.
 - **Gaps:** no LAN HTTP servers, Windows local connectors only contained, no prompts, no mobile screen.
 
-**Next: O (browser), which needs decision D5; or M.8 (AppContainer implementation).**
+**M.8: Windows AppContainer adapter. Done, opt-in** (`a68e9a5`).
+- **Setting:** `sandbox.windows: "appcontainer"`; the default stays `job`.
+- **What it fences:** only the workspace and a private home are writable, and other folders can't be read. Network is off unless the run's network is on; then it gets the public internet, never loopback. It runs inside the existing job object.
+- **Tests:** an escape suite with controls; removing the token fails it.
+- **Live check:** a `run_terminal` command wrote in its workspace and was denied a file outside it.
+- **Found in the live check:** the server's child processes need `CREATE_NO_WINDOW` inside the box.
+- **Open:** registry, pipes and COM; grant removal; Flutter; LAN; switching the default.
+
+**MCP reconnect:** done (`d0cff2e`). A dropped connector reconnects with back-off; `go test -race` passes on Linux.
+
+**Next: O (browser), which needs decision D5 (Node/Playwright as an optional dependency).** Switching the Windows default to AppContainer also waits on a decision (§17 of the AppContainer doc).
 
 Then Phase 5: N (MCP client and connectors).
