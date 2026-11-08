@@ -164,6 +164,29 @@ client never hands the agent an arbitrary path.
   `workspace.removed`.
 - **Storage:** the list is kept in `<user config>/gubern/workspaces.json`.
 
+## Run checkpoints and restore
+
+When a run's workspace is the top of a git repository, `/agent` and `/team`
+runs record the workspace before they start and after every step that
+changed it. Each record is a commit on a hidden ref,
+`refs/gubern/checkpoints/<run>/<step>`. The commits are built with git
+plumbing and a temporary index, so your branch, index and uncommitted work
+are never touched, and nothing is pushed. Each checkpoint is also sent to
+the run's stream as a `checkpoint_created` event.
+
+```
+GET  /api/runs/{id}/changes          (sessions:read) → {"checkpoints":[{step, commit, label, at, files:["M path", ...]}]}
+GET  /api/runs/{id}/changes/{step}   (sessions:read) → {"step", "diff"}   (the patch that step made; capped at 256 KB)
+POST /api/runs/{id}/restore          (agents:run)    {"step": N} → 202 {"approval_id", "session_id", "files"}
+```
+
+A restore only happens after a **HIGH RISK approval** whose preview lists
+the files. A paired phone can decide it with step-up. The restore puts back
+only the files the run's checkpoints changed after that step, as they were
+then; files the run created are removed. Edits made after the run are left
+alone, as are files the run never touched. The result is recorded as a new
+checkpoint. Audit actions: `run.restore_requested` and `run.restored`.
+
 ## OpenAI-compatible API
 
 Any OpenAI-speaking tool (Claude Code, Aider, Cline, Cursor, …) can use

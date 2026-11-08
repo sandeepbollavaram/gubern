@@ -42,6 +42,9 @@ const (
 	RunStatus   Type = "run_status"
 	CheckResult Type = "check_result"
 	RunOutcome  Type = "run_outcome"
+	// CheckpointCreated: the workspace was snapshotted (Phase 4). Label is
+	// what changed it, Status the step number, Text the commit.
+	CheckpointCreated Type = "checkpoint_created"
 )
 
 // MaxOutput caps a tool_end output excerpt so one event stays small; the full

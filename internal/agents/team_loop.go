@@ -84,6 +84,7 @@ func (c *Coordinator) handleTeamLoop(ctx context.Context, sessionID, goal string
 	c.auditRunStarted(ctx, sessionID, runID, "team: "+goal, check, false)
 	catalog, skillFiles := c.skillCatalog(workDir)
 	approver := c.loopApprover(sessionID, emit)
+	afterStep := c.workspaceCheckpoints(ctx, sessionID, runID, workDir, localTools, emit)
 
 	run := func(p RoleProfile, task string, verify func(context.Context) (bool, string)) LoopResult {
 		emit(fmt.Sprintf("── %s ──", strings.ToUpper(p.Name[:1])+p.Name[1:]))
@@ -100,6 +101,7 @@ func (c *Coordinator) handleTeamLoop(ctx context.Context, sessionID, goal string
 			Timeout:    AgentRunTimeout - 5*time.Second,
 			MaxTokens:  250_000,
 			Emit:       emit,
+			AfterStep:  afterStep,
 		}, task)
 		if res.Stop == LoopDone {
 			emit(res.Answer)

@@ -658,6 +658,8 @@ func runStart(ctx context.Context, pidfile string) error {
 	apiSrv.SetSkills(newSkillsBackend(resolveWorkingDir(), userdir.Config(), approvalSvc, auditLog, log))
 	// Workspaces: the folders /agent runs may work in (default + added).
 	apiSrv.SetWorkspaces(newWorkspacesBackend(resolveWorkingDir(), userdir.Config()))
+	// Runs' git checkpoints: diffs, and restores behind an approval.
+	apiSrv.SetRunChanges(runChangesBackend{approvals: approvalSvc, audit: auditLog, log: log})
 	mgr.OnShutdown("approvals", func(context.Context) error { return approvalSvc.Close() })
 	// Run event log (milestone D): structured streams are recorded, redacted,
 	// and resumable.

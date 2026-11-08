@@ -2334,6 +2334,10 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		}
 	}
 	c.auditRunStarted(ctx, sessionID, runID, task, check, flags.readOnly)
+	var afterStep func(LoopStep)
+	if !flags.readOnly {
+		afterStep = c.workspaceCheckpoints(ctx, sessionID, runID, workDir, localTools, emit)
+	}
 	catalog, skillFiles := c.skillCatalog(workDir)
 	approver := c.loopApprover(sessionID, emit)
 	var verify func(context.Context) (bool, string)
@@ -2372,6 +2376,7 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 		Emit:       emit,
 		Checkpoint: checkpoint,
 		Resume:     resume,
+		AfterStep:  afterStep,
 	}, task)
 	c.auditRun(ctx, sessionID, runID, task, check, res)
 	if outcome, why := runOutcome(res); outcome != "" {

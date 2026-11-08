@@ -89,6 +89,7 @@ type Server struct {
 	statusProvider  func() StatusInfo
 	skills          SkillsBackend
 	workspaces      WorkspacesBackend
+	runChanges      RunChangesBackend
 	aiCostProvider  func() AICostInfo
 	healingProvider func() HealingStatus
 	researchList    func() []ResearchReport
@@ -487,6 +488,9 @@ func New(addr string, holder *config.Holder, version string, log *slog.Logger) *
 	s.route(mux, "GET /api/runs/{id}", http.HandlerFunc(s.handleRunGet))
 	s.route(mux, "GET /api/runs/{id}/events", http.HandlerFunc(s.handleRunEvents))
 	s.route(mux, "POST /api/runs/{id}/resume", http.HandlerFunc(s.handleRunResume))
+	s.route(mux, "GET /api/runs/{id}/changes", http.HandlerFunc(s.handleRunChanges))
+	s.route(mux, "GET /api/runs/{id}/changes/{step}", http.HandlerFunc(s.handleRunChangeDiff))
+	s.route(mux, "POST /api/runs/{id}/restore", http.HandlerFunc(s.handleRunRestore))
 	s.route(mux, "POST /api/runs/{id}/cancel", http.HandlerFunc(s.handleRunCancel))
 	s.route(mux, "GET /api/activity", http.HandlerFunc(s.handleActivity))
 	s.route(mux, "GET /api/approvals", http.HandlerFunc(s.handleApprovalsList))

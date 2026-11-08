@@ -72,6 +72,9 @@ type LoopConfig struct {
 	// its tool calls run, so an interrupted call is known to have been
 	// asked for), and after each tool result.
 	Checkpoint func(LoopState)
+	// AfterStep, when set, is called after each tool call's result is
+	// recorded (e.g. to snapshot the workspace).
+	AfterStep func(LoopStep)
 	// Resume continues an interrupted run from its last checkpoint instead
 	// of starting from the request. Tool results already recorded are
 	// never re-run. A call that was asked for but has no result was in
@@ -275,6 +278,9 @@ func RunLoop(ctx context.Context, cfg LoopConfig, request string) LoopResult {
 				Content: boundObservation(step.Observed, cfg.MaxObservation),
 			})
 			save()
+			if cfg.AfterStep != nil {
+				cfg.AfterStep(step)
+			}
 		}
 	}
 	res.Stop = LoopBudgetExceeded
