@@ -122,6 +122,8 @@ export type TranscriptItem =
   | { kind: "tools"; id: string; tool: string; steps: ToolStep[] }
   | { kind: "approval"; id: string; approvalId: string }
   | { kind: "skill"; id: string; name: string; hash: string }
+  /** The server stopped during this run; it can be resumed from its checkpoint. */
+  | { kind: "interrupted"; id: string; runId: string }
   | { kind: "status"; id: string; text: string; tone: "ai" | "warning" | "danger" }
   | { kind: "answers"; id: string; pairs: { label: string; value: string }[] };
 
@@ -219,6 +221,8 @@ export interface GubernClient {
   /** Starts a session when sessionId is undefined; returns its id. */
   send(sessionId: string | undefined, text: string, opts: SendOptions): Promise<string>;
   stop(sessionId: string): void;
+  /** Continues an interrupted run from its last checkpoint (Phase 3). */
+  resumeRun(sessionId: string, runId: string): Promise<void>;
   decide(approvalId: string, approve: boolean): Promise<void>;
   answer(setId: string, key: string, value: string): void;
   skipQuestion(setId: string, key: string): void;

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowDown, BookOpen, ChevronDown, Download, ListChecks, Pencil, Pin, Trash2 } from "lucide-react";
+import { ArrowDown, BookOpen, ChevronDown, PauseCircle, Download, ListChecks, Pencil, Pin, Trash2 } from "lucide-react";
 import { client, useCan, useIsRunning, usePlan, useQuestions, useSessions, useTranscript } from "../../data/client";
 import type { TranscriptItem, ViewMode } from "../../data/model";
 import { useUIStore } from "../../store";
@@ -12,7 +12,43 @@ import { Composer } from "./Composer";
 import { QuestionTray } from "./QuestionTray";
 import { ToolGroup } from "./ToolGroup";
 
-function Item({ item, viewMode, highlightApproval }: { item: TranscriptItem; viewMode: ViewMode; highlightApproval?: string }) {
+function InterruptedCard({ sessionId, runId }: { sessionId: string; runId: string }) {
+  const canRun = useCan("agents:run");
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-[14px]">
+      <PauseCircle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
+      <p className="min-w-0 flex-1">
+        The server stopped during this run. Resuming picks up from its last step; nothing that may already have run is repeated.
+      </p>
+      {canRun && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void client.resumeRun(sessionId, runId).finally(() => setBusy(false));
+          }}
+          className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:opacity-60"
+        >
+          {busy ? "Resuming…" : "Resume"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Item({
+  item,
+  viewMode,
+  highlightApproval,
+  sessionId,
+}: {
+  item: TranscriptItem;
+  viewMode: ViewMode;
+  highlightApproval?: string;
+  sessionId: string;
+}) {
   switch (item.kind) {
     case "user":
       return (
@@ -36,6 +72,8 @@ function Item({ item, viewMode, highlightApproval }: { item: TranscriptItem; vie
       );
     case "tools":
       return <ToolGroup tool={item.tool} steps={item.steps} viewMode={viewMode} />;
+    case "interrupted":
+      return <InterruptedCard sessionId={sessionId} runId={item.runId} />;
     case "skill":
       return (
         <p className="inline-flex items-center gap-1.5 rounded-full bg-ai/15 px-2.5 py-0.5 text-[12px] font-medium text-ai-foreground" title={item.hash ? `SKILL.md ${item.hash.slice(0, 16)}` : undefined}>
@@ -256,7 +294,7 @@ function Conversation({ id }: { id: string }) {
       >
         <div className="mx-auto max-w-3xl space-y-5 px-5 py-6" aria-live="polite" aria-relevant="additions">
           {items.map((item) => (
-            <Item key={item.id} item={item} viewMode={viewMode} highlightApproval={params.get("approval") ?? undefined} />
+            <Item key={item.id} item={item} viewMode={viewMode} highlightApproval={params.get("approval") ?? undefined} sessionId={id} />
           ))}
         </div>
       </div>

@@ -15,6 +15,8 @@ class FakeRuns {
   String? submitted;
   String? auth;
   String? idempotency;
+  bool interrupted = false;
+  int resumed = 0;
 
   Uri get url => Uri.parse('http://127.0.0.1:${server.port}');
 
@@ -41,7 +43,15 @@ class FakeRuns {
       r.write(jsonEncode({'approvals': []}));
     } else if (req.uri.path == '/api/runs') {
       r.headers.contentType = ContentType.json;
-      r.write(jsonEncode({'runs': []}));
+      r.write(jsonEncode({'runs': interrupted ? [{'id': 'run-old', 'session_id': 's-test', 'status': 'interrupted', 'last_seq': 4}] : []}));
+    } else if (req.uri.path == '/api/runs/run-old/resume' && req.method == 'POST') {
+      resumed++;
+      r.headers
+        ..contentType = ContentType('text', 'event-stream')
+        ..set('X-Gubern-Run-Id', 'run-new');
+      _frame(r, {'type': 'text', 'run_id': 'run-new', 'seq': 1, 'text': 'Picking up where I left off.'});
+      _frame(r, {'type': 'run_finished', 'run_id': 'run-new', 'seq': 2, 'status': 'done'});
+      _frame(r, {'run_id': 'run-new', 'status': 'done', 'last_seq': 2}, event: 'done');
     } else if (req.uri.path == '/api/agents/submit') {
       submitted = (jsonDecode(body) as Map)['message'] as String;
       idempotency = req.headers.value('Idempotency-Key');
@@ -128,5 +138,19 @@ void main() {
     expect(cleanTitle('  plain question  '), 'Plain question');
     expect(cleanTitle('[[tool:x {}]]'), '');
     expect(cleanTitle('/agent clean the build [[tool:run_terminal {"com'), 'Clean the build');
+  });
+
+  test('an interrupted run is offered for resume and continues', () async {
+    fake.interrupted = true;
+    final c = ChatController(api, 's-test', onRevoked: () => fail('not revoked'));
+    await c.load();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(c.interruptedRunId, 'run-old');
+    await c.resume();
+    expect(fake.resumed, 1);
+    expect(c.interruptedRunId, isNull);
+    expect(c.running, isFalse);
+    expect(c.runId, 'run-new');
+    expect(c.items.whereType<AssistantItem>().single.text, contains('Picking up'));
   });
 }

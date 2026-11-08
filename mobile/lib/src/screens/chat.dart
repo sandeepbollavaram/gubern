@@ -73,6 +73,8 @@ class ChatController extends ChangeNotifier {
   bool loading = false;
   bool running = false;
   String? runId;
+  /// The session's latest run, when the server stopped while it ran.
+  String? interruptedRunId;
   int _lastSeq = 0;
   int _n = 0;
   bool _disposed = false;
@@ -112,6 +114,9 @@ class ChatController extends ChangeNotifier {
         running = true;
         _changed();
         unawaited(_follow(rs.first.id));
+      } else if (rs.isNotEmpty && rs.first.status == 'interrupted') {
+        interruptedRunId = rs.first.id;
+        _changed();
       }
     } catch (_) {}
   }
@@ -141,6 +146,32 @@ class ChatController extends ChangeNotifier {
         items.add(StatusItem(_k('s'), 'The server could not be reached.', 'danger'));
         _changed();
       }
+    }
+  }
+
+  /// Continues the interrupted run from its last checkpoint.
+  Future<void> resume() async {
+    final from = interruptedRunId;
+    if (from == null || running) return;
+    interruptedRunId = null;
+    running = true;
+    _changed();
+    try {
+      final rs = await api.resumeRun(from);
+      runId = rs.runId;
+      _lastSeq = 0;
+      await _consume(rs);
+      if (!rs.done && running && rs.runId.isNotEmpty) await _follow(rs.runId);
+    } on RevokedException {
+      onRevoked();
+    } on ApiException catch (e) {
+      running = false;
+      items.add(StatusItem(_k('s'), e.status == 409 ? 'That run can no longer be resumed (${e.message}).' : e.message, 'danger'));
+      _changed();
+    } catch (_) {
+      running = false;
+      items.add(StatusItem(_k('s'), 'The server could not be reached.', 'danger'));
+      _changed();
     }
   }
 
@@ -424,6 +455,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     },
                   ),
           ),
+          AnimatedSize(
+            duration: Motion.base,
+            curve: Motion.curve,
+            child: _c.interruptedRunId == null ? const SizedBox(width: double.infinity) : _ResumeBanner(onResume: () => unawaited(_c.resume())),
+          ),
           _Composer(
             controller: _input,
             focus: _focus,
@@ -435,6 +471,44 @@ class _ChatScreenState extends State<ChatScreen> {
               HapticFeedback.lightImpact();
               unawaited(_c.stop());
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Offers to continue a run the server stopped in the middle of.
+class _ResumeBanner extends StatelessWidget {
+  const _ResumeBanner({required this.onResume});
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = context.g;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: g.warn.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: g.warn.withValues(alpha: .4)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.pause_circle_outline_rounded, color: g.warn, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'The server stopped during the last run. Resume picks up where it left off; nothing that may have run is repeated.',
+              style: TextStyle(fontSize: 13, height: 1.4, color: g.text),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 38), padding: const EdgeInsets.symmetric(horizontal: 14)),
+            onPressed: onResume,
+            child: const Text('Resume'),
           ),
         ],
       ),

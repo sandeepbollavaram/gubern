@@ -210,6 +210,8 @@ state.transcripts["s-latency"] = [
 state.transcripts["s-tls"] = [
   { kind: "user", id: "c1", text: "Rotate the TLS certificates for all https routes.", at: t0 - 26 * 60 * MIN },
   { kind: "assistant", id: "c2", text: "Done. Rotated 3 certificates; the next expiry is in 89 days.", at: t0 - 26 * 60 * MIN + 4 * MIN },
+  { kind: "user", id: "c3", text: "Now renew the wildcard certificate too.", at: t0 - 26 * 60 * MIN + 10 * MIN },
+  { kind: "interrupted", id: "c4", runId: "r-demo-interrupted" },
 ];
 
 state.transcripts["s-deps"] = [
@@ -577,6 +579,12 @@ ${s.description}
     patchTranscript(id, (items) => [...items, { kind: "user", id: nextId("m"), text, at: now(), queued: busy }]);
     if (!busy) respond(id, text);
     return id;
+  },
+  async resumeRun(sessionId, runId) {
+    patchTranscript(sessionId, (items) => [
+      ...items.filter((i) => !(i.kind === "interrupted" && i.runId === runId)),
+      { kind: "status", id: nextId("s"), text: "Resumed from the last checkpoint.", tone: "ai" },
+    ]);
   },
   stop(sessionId) {
     state.running.delete(sessionId);

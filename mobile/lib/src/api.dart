@@ -486,6 +486,16 @@ extension GubernReads on GubernApi {
     return RunStream(res.headers.value('X-Gubern-Run-Id') ?? '', res);
   }
 
+  /// Resumes an interrupted /agent run from its last checkpoint, as a new
+  /// run in the same session (Phase 3). Steps already done are not redone,
+  /// and an action that may have run is never repeated.
+  Future<RunStream> resumeRun(String runId) async {
+    final req = await _streamRequest('POST', '/api/runs/${Uri.encodeComponent(runId)}/resume');
+    final res = await req.close();
+    await _checkStream(res);
+    return RunStream(res.headers.value('X-Gubern-Run-Id') ?? '', res);
+  }
+
   /// Re-attaches to a run after [lastSeq] (Last-Event-ID), e.g. after a drop.
   Future<RunStream> follow(String runId, int lastSeq) async {
     final req = await _streamRequest('GET', '/api/runs/${Uri.encodeComponent(runId)}/events');

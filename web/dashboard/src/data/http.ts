@@ -449,6 +449,8 @@ class HttpClient implements GubernClient {
         this.running.add(sid);
         this.changed();
         void this.follow(sid, run.id);
+      } else if (run && run.status === "interrupted") {
+        this.push(sid, { kind: "interrupted", id: this.localId("int"), runId: run.id });
       }
     } catch {
       /* ignore */
@@ -609,6 +611,34 @@ class HttpClient implements GubernClient {
       if (!finished && runId) void this.follow(sid, runId);
     });
     return sid;
+  };
+
+  resumeRun = async (sid: string, fromRunId: string): Promise<void> => {
+    this.setTranscript(
+      sid,
+      (this.transcripts[sid] ?? []).filter((i) => !(i.kind === "interrupted" && i.runId === fromRunId)),
+    );
+    this.running.add(sid);
+    this.changed();
+    const res = await authFetch(`/api/runs/${encodeURIComponent(fromRunId)}/resume`, {
+      method: "POST",
+      headers: { Accept: "text/event-stream" },
+    }).catch(() => undefined);
+    if (!res || !res.ok || !res.body) {
+      this.running.delete(sid);
+      let why = "The server could not be reached.";
+      if (res) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        why = res.status === 409 ? `That run can no longer be resumed: ${body.error ?? "conflict"}.` : `The server refused (${res.status}).`;
+      }
+      this.push(sid, { kind: "status", id: this.localId("s"), text: why, tone: "danger" });
+      return;
+    }
+    const runId = res.headers.get("X-Gubern-Run-Id") ?? "";
+    this.runOf[sid] = runId;
+    void this.consume(sid, runId, res.body).then((finished) => {
+      if (!finished && runId) void this.follow(sid, runId);
+    });
   };
 
   stop = (sid: string) => {
