@@ -64,6 +64,7 @@ func (c *Coordinator) handleTeamLoop(ctx context.Context, sessionID, goal string
 	if err != nil {
 		return "Can't open that workspace: " + err.Error(), nil
 	}
+	localTools = c.withExternalTools(localTools) // MCP connector tools (Phase 5)
 	var transcript []string
 	emit := func(line string) {
 		transcript = append(transcript, line)

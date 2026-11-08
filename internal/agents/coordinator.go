@@ -235,6 +235,7 @@ type Coordinator struct {
 
 	mu            sync.Mutex
 	netDefault    string // sandbox default network ("on"/"off"); see run_network.go
+	externalTools func() []Tool // MCP connector tools; see external_tools.go
 	netEnforced   bool   // whether this server's sandbox enforces it
 	checkpoints   RunCheckpointStore // nil: /agent runs are not checkpointed
 	// Per-run workspaces (see workspace_tools.go).
@@ -1215,6 +1216,9 @@ func executeApprovedLocal(ctx context.Context, tool Tool, params map[string]any)
 		tl.RequireApproval = false
 		return tl.Execute(ctx, params)
 	default:
+		if g, ok := tool.(ApprovalGated); ok { // external (MCP) tools gate themselves
+			return g.ExecuteApproved(ctx, params)
+		}
 		return tool.Execute(ctx, params) // read-only tool; no gate
 	}
 }
@@ -2304,6 +2308,8 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 	}
 	if flags.readOnly {
 		emit("ℹ Read-only run: the model can read and search, not change files or run commands.")
+	} else {
+		localTools = c.withExternalTools(localTools) // MCP connector tools (Phase 5)
 	}
 	runID := newRunID()
 	// A run recorded in the event log is checkpointed under its log id, and
