@@ -60,6 +60,7 @@ type Forge struct {
 	cfg ForgeConfig
 
 	mu        sync.Mutex
+	box       sandboxSet // where builds run (Phase 4); see sandbox.go
 	active    bool
 	current   string
 	prog      string
@@ -297,7 +298,7 @@ func (f *Forge) deps(sandbox string) depStep {
 	if f.cfg.Deps != nil {
 		return f.cfg.Deps
 	}
-	return NewDependencyAgent(DepConfig{SandboxDir: sandbox, CacheDir: f.cfg.CacheDir})
+	return NewDependencyAgent(DepConfig{SandboxDir: sandbox, CacheDir: f.cfg.CacheDir, box: f.sandbox()})
 }
 
 func (f *Forge) codegen(sandbox string) codegenStep {
@@ -311,7 +312,7 @@ func (f *Forge) builder(sandbox string, stack StackChoice) buildStep {
 	if f.cfg.Builder != nil {
 		return f.cfg.Builder(sandbox, stack)
 	}
-	return NewBuildAgent(BuildConfig{SandboxDir: sandbox, Stack: stack, CacheDir: f.cfg.CacheDir})
+	return NewBuildAgent(BuildConfig{SandboxDir: sandbox, Stack: stack, CacheDir: f.cfg.CacheDir, box: f.sandbox()})
 }
 
 func (f *Forge) qa(sandbox string) qaStep {

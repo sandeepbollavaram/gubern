@@ -316,7 +316,12 @@ decision reaches the terminal tool. A resumed run keeps the network it was
 granted. `/agent --read-only` runs no commands and isn't asked.
 
 Each `run_terminal` result records `"sandbox": "<adapter>"`. Commands run by
-background sub-agents (`run_command`) are not wrapped yet. Approval, the
+background sub-agents (`run_command`) use the same sandbox. Forge builds do
+too, with the network on (they download dependencies): every build on
+Windows; on Linux `go build` runs isolated with the Go toolchain read-only and
+its caches in the private home, while `flutter build` stays unsandboxed,
+because Flutter writes into its own SDK. Each build result records its
+`sandbox`. Approval, the
 workspace check, the scrubbed environment and the process-tree kill apply
 with or without a sandbox. `GUBERN_AGENTS_LOCAL_TOOLS_SANDBOX_MODE` and
 `GUBERN_AGENTS_LOCAL_TOOLS_SANDBOX_NETWORK` override the mode and network.

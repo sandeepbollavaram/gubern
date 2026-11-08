@@ -687,3 +687,9 @@ func NewTrustedToolRegistry(cfg LocalFSConfig) (*ToolRegistry, error) {
 	}
 	return reg, nil
 }
+
+// RunContained runs cmd inside box (nil: no sandbox) under p, the same way
+// run_terminal does; Forge builds use it.
+func RunContained(ctx context.Context, cmd *exec.Cmd, box sandbox.Sandbox, p sandbox.Policy) error {
+	return runContained(ctx, cmd, box, p)
+}

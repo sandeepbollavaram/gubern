@@ -487,8 +487,17 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **Memory cap:** `MemoryMax`, `MemorySwapMax` and `MemoryLimit` had no effect on WSL's hybrid cgroups (512 MB allocated under 64 MB). So memory is claimed only when the host's cgroup v2 controller has `memory`; the memory test skips otherwise.
 - **Not verified:** a non-root user's systemd scope. WSL's default user is root, and nobody has no user manager.
 
+**M.7: Forge builds in the sandbox. Done.**
+- Forge's builds and dependency steps use the sandbox through the same shared run path, with the network on.
+  - **Windows:** every build runs in the job object.
+  - **Linux:** `go build` runs isolated, with the toolchain read-only and the module and build caches in the private home.
+  - **Linux Flutter builds:** unsandboxed, because Flutter writes into its SDK. The build result's `sandbox` field says so.
+- **Tests:** plan rules with fake sandboxes, and a real `go build` of a small project.
+  - Windows: passes in the job object.
+  - Linux (WSL, Go now installed): passes isolated, both as root through the systemd scope and as nobody.
+  - With Go installed, `TestRunCommand_EnvironmentIsScrubbed` also passes in WSL.
+
 **Next: the rest of M.** Remaining:
-- wrapping Forge builds;
 - the AppContainer spike (Windows file and network fence).
 
 Then Phase 5: N (MCP client and connectors).

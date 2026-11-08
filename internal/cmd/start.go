@@ -1102,6 +1102,9 @@ func runStart(ctx context.Context, pidfile string) error {
 		return fmt.Errorf("config invalid, refusing to start: %w", lerr)
 	}
 	apiSrv.SetSandboxInfo(localFS.SandboxInfo)
+	if forgeJobs != nil {
+		forgeJobs.SetSandbox(localFS.Sandbox, localFS.SandboxConfig) // Forge builds too (Phase 4)
+	}
 	if localFS.Sandbox == nil {
 		log.Warn("terminal commands are not sandboxed", "reason", localFS.SandboxInfo.Reason)
 	} else {

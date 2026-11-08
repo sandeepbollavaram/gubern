@@ -215,7 +215,8 @@ commands.
   reading outside the workspace, symlinks out, path traversal, the network
   with it off, a fork bomb and signalling the server; each must fail, and
   each has a control showing the same action works where it is allowed.
-  `run_command` (background sub-agents) and Forge builds are not wrapped yet.
+  `run_command` (background sub-agents) and Forge builds use it too; on Linux
+  Flutter builds stay unsandboxed (Flutter writes into its own SDK).
 - The **approval gate** is the primary control for machine-touching actions —
   keep it enabled for unattended runs.
 - **Skills** (`SKILL.md` files in the workspace) are read as instructions for

@@ -19,6 +19,7 @@ type BuildConfig struct {
 	Stack      StackChoice
 	Timeout    time.Duration // default 15m
 	CacheDir   string        // reserved for build caches
+	box        sandboxSet    // where the build runs (Phase 4)
 }
 
 // BuildAgent runs headless builds for a generated project.
@@ -42,6 +43,8 @@ type BuildOutput struct {
 	Stdout       string `json:"stdout"`
 	Stderr       string `json:"stderr"`
 	DurationMs   int64  `json:"duration_ms"`
+	// Sandbox names the boundary the build ran in ("none" when it had none).
+	Sandbox string `json:"sandbox"`
 }
 
 // Build selects and runs the build command for the configured stack, capturing
@@ -76,12 +79,14 @@ func (b *BuildAgent) Build(ctx context.Context) (BuildOutput, error) {
 	cmd.Dir = b.cfg.SandboxDir
 	// The build runs generated code (Gradle build scripts, cgo), so it gets
 	// the scrubbed environment: no provider keys, tokens or master key.
-	cmd.Env = agents.BuildEnv()
+	box, policy, extraEnv, label := b.cfg.box.plan(command, b.cfg.SandboxDir)
+	cmd.Env = append(agents.BuildEnv(), extraEnv...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	runErr := cmd.Run()
+	runErr := agents.RunContained(cctx, cmd, box, policy)
 	out := BuildOutput{
+		Sandbox:      label,
 		ArtifactType: artifactType,
 		Stdout:       stdout.String(),
 		Stderr:       stderr.String(),

@@ -34,6 +34,7 @@ type DepConfig struct {
 	SandboxDir string
 	Timeout    time.Duration // per command; default 5m
 	CacheDir   string        // for caching downloads (reserved)
+	box        sandboxSet    // where commands run (Phase 4)
 }
 
 // DependencyAgent installs the packages a build needs.
@@ -110,10 +111,11 @@ func (d *DependencyAgent) run(ctx context.Context, command string, args ...strin
 	defer cancel()
 	cmd := exec.CommandContext(cctx, command, args...)
 	cmd.Dir = d.cfg.SandboxDir
-	cmd.Env = agents.BuildEnv() // no provider keys, tokens or master key
+	box, policy, extraEnv, _ := d.cfg.box.plan(command, d.cfg.SandboxDir)
+	cmd.Env = append(agents.BuildEnv(), extraEnv...) // no provider keys, tokens or master key
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	if err := agents.RunContained(cctx, cmd, box, policy); err != nil {
 		if cctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("timed out after %s", d.cfg.Timeout)
 		}
