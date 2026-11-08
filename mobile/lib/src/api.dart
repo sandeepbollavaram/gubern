@@ -476,11 +476,18 @@ extension GubernReads on GubernApi {
   }
 
   /// Starts a run and streams its events (SSE).
-  Future<RunStream> submit(String sessionId, String text, ChatMode mode) async {
+  /// [check], in Agent mode, is a command that must pass before the run
+  /// counts as completed (sent as the request's declared check).
+  Future<RunStream> submit(String sessionId, String text, ChatMode mode, {String? check}) async {
     final req = await _streamRequest('POST', '/api/agents/submit?events=1');
     req.headers.set('Idempotency-Key', _randomHex(12));
     req.headers.contentType = ContentType.json;
-    req.add(utf8.encode(jsonEncode({'message': mode.prefix + text, 'session_id': sessionId})));
+    final c = check?.trim() ?? '';
+    req.add(utf8.encode(jsonEncode({
+      'message': mode.prefix + text,
+      'session_id': sessionId,
+      if (mode == ChatMode.agent && c.isNotEmpty) 'check': c,
+    })));
     final res = await req.close();
     await _checkStream(res);
     return RunStream(res.headers.value('X-Gubern-Run-Id') ?? '', res);

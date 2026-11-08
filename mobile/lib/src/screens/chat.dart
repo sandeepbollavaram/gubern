@@ -121,13 +121,13 @@ class ChatController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> send(String text, ChatMode mode) async {
+  Future<void> send(String text, ChatMode mode, {String? check}) async {
     final sid = sessionId ??= newSessionId();
     items.add(UserItem(_k('u'), text));
     running = true;
     _changed();
     try {
-      final rs = await api.submit(sid, text, mode);
+      final rs = await api.submit(sid, text, mode, check: check);
       runId = rs.runId;
       _lastSeq = 0;
       await _consume(rs);
@@ -328,6 +328,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final _input = TextEditingController();
   final _focus = FocusNode();
   late ChatMode _mode = widget.initialMode;
+  final _check = TextEditingController();
+  bool _showCheck = false;
 
   @override
   void initState() {
@@ -358,6 +360,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _c.dispose();
     _scroll.dispose();
     _input.dispose();
+    _check.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -367,7 +370,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (t.isEmpty || _c.running) return;
     HapticFeedback.selectionClick();
     _input.clear();
-    unawaited(_c.send(t, _mode));
+    final check = _mode == ChatMode.agent && _showCheck ? _check.text.trim() : '';
+    unawaited(_c.send(t, _mode, check: check.isEmpty ? null : check));
   }
 
   Future<void> _review(ApprovalItem it) async {
@@ -466,6 +470,12 @@ class _ChatScreenState extends State<ChatScreen> {
             mode: _mode,
             running: _c.running,
             onMode: (m) => setState(() => _mode = m),
+            check: _check,
+            showCheck: _showCheck,
+            onToggleCheck: () => setState(() {
+              _showCheck = !_showCheck;
+              if (!_showCheck) _check.clear();
+            }),
             onSend: _send,
             onStop: () {
               HapticFeedback.lightImpact();
@@ -998,10 +1008,17 @@ class _Composer extends StatelessWidget {
     required this.mode,
     required this.running,
     required this.onMode,
+    required this.check,
+    required this.showCheck,
+    required this.onToggleCheck,
     required this.onSend,
     required this.onStop,
   });
   final TextEditingController controller;
+  /// Agent mode's optional completion check ("done when this passes").
+  final TextEditingController check;
+  final bool showCheck;
+  final VoidCallback onToggleCheck;
   final FocusNode focus;
   final ChatMode mode;
   final bool running;
@@ -1034,8 +1051,53 @@ class _Composer extends StatelessWidget {
                           onMode(m);
                         }),
                       ),
+                    if (mode == ChatMode.agent)
+                      Semantics(
+                        button: true,
+                        selected: showCheck,
+                        label: 'Completion check',
+                        child: GestureDetector(
+                          onTap: onToggleCheck,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: showCheck ? g.ok.withValues(alpha: .12) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: showCheck ? g.ok.withValues(alpha: .5) : g.border),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.fact_check_outlined, size: 15, color: showCheck ? g.ok : g.muted),
+                                const SizedBox(width: 6),
+                                Text('Check', style: TextStyle(fontSize: 13, color: showCheck ? g.text : g.muted)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
+              ),
+              AnimatedSize(
+                duration: Motion.base,
+                curve: Motion.curve,
+                child: mode == ChatMode.agent && showCheck
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: TextField(
+                          controller: check,
+                          style: mono(context, size: 13),
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: 'Done when this passes, e.g. go test ./...',
+                            prefixIcon: Icon(Icons.fact_check_outlined, size: 18, color: g.ok),
+                          ),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
               ),
               const SizedBox(height: 8),
               Container(
