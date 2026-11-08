@@ -196,6 +196,31 @@ func StartVortex(t *testing.T, bin, configPath string) *VortexProcess {
 // StartVortexWithArgs is StartVortex with extra start flags (e.g. "--team").
 func StartVortexWithArgs(t *testing.T, bin, configPath string, extraArgs ...string) *VortexProcess {
 	t.Helper()
+	return startWithHome(t, bin, configPath, t.TempDir(), extraArgs...)
+}
+
+// Kill ends the server abruptly (SIGKILL / TerminateProcess): no shutdown
+// hooks run, like a crash or kill -9.
+func (p *VortexProcess) Kill(t *testing.T) {
+	t.Helper()
+	if p.stopped {
+		return
+	}
+	_ = p.Cmd.Process.Kill()
+	_, _ = p.Cmd.Process.Wait()
+	p.stopped = true
+}
+
+// Restart starts a new server with the same config and config home, so it
+// opens the same stores (event log, approvals, keys) as p. p must have
+// stopped.
+func (p *VortexProcess) Restart(t *testing.T, extraArgs ...string) *VortexProcess {
+	t.Helper()
+	return startWithHome(t, p.BinaryPath, p.ConfigPath, p.ConfigHome, extraArgs...)
+}
+
+func startWithHome(t *testing.T, bin, configPath, home string, extraArgs ...string) *VortexProcess {
+	t.Helper()
 	// The management API binds a fixed port (:9090). Wait for any previous
 	// test's process to release it, so this process — not a lingering stale one
 	// — is the one that answers /health. Without this, back-to-back tests can
@@ -215,7 +240,7 @@ func StartVortexWithArgs(t *testing.T, bin, configPath string, extraArgs ...stri
 		ConfigPath: configPath,
 		APIAddr:    apiBase,
 		BinaryPath: bin,
-		ConfigHome: t.TempDir(),
+		ConfigHome: home,
 	}
 	cmd.Env = p.env()
 	// Tee child output to both os.Stderr (visible while debugging) and an
