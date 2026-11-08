@@ -11,6 +11,7 @@ import type {
   Identity,
   ModelInfo,
   Output,
+  RunCheckpoint,
   Skill,
   SkillInstall,
   SkillList,
@@ -514,6 +515,12 @@ class HttpClient implements GubernClient {
         }
         break;
       }
+      case "checkpoint_created": {
+        if (ev.run_id && ev.status && ev.status !== "0" && !items.some((i) => i.kind === "changes" && i.runId === ev.run_id)) {
+          items.push({ kind: "changes", id: this.localId("chg"), runId: ev.run_id });
+        }
+        break;
+      }
       case "skill_activated": {
         if (ev.label) items.push({ kind: "skill", id: this.localId("sk"), name: ev.label, hash: ev.skill_hash ?? "" });
         break;
@@ -632,6 +639,22 @@ class HttpClient implements GubernClient {
       if (!finished && runId) void this.follow(sid, runId);
     });
     return sid;
+  };
+
+  runChanges = async (runId: string): Promise<RunCheckpoint[]> =>
+    (await apiJSON<{ checkpoints: RunCheckpoint[] }>(`/api/runs/${encodeURIComponent(runId)}/changes`)).checkpoints;
+
+  runDiff = async (runId: string, step: number): Promise<string> =>
+    (await apiJSON<{ diff: string }>(`/api/runs/${encodeURIComponent(runId)}/changes/${step}`)).diff;
+
+  restoreRun = async (runId: string, step: number) => {
+    const b = await apiJSON<{ approval_id: string; files: string[] }>(`/api/runs/${encodeURIComponent(runId)}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step }),
+    });
+    this.changed();
+    return { approvalId: b.approval_id, files: b.files };
   };
 
   resumeRun = async (sid: string, fromRunId: string): Promise<void> => {

@@ -212,6 +212,7 @@ state.transcripts["s-tls"] = [
   { kind: "assistant", id: "c2", text: "Done. Rotated 3 certificates; the next expiry is in 89 days.", at: t0 - 26 * 60 * MIN + 4 * MIN },
   { kind: "user", id: "c3", text: "Now renew the wildcard certificate too.", at: t0 - 26 * 60 * MIN + 10 * MIN },
   { kind: "interrupted", id: "c4", runId: "r-demo-interrupted" },
+  { kind: "changes", id: "c5", runId: "r-demo-changes" },
 ];
 
 state.transcripts["s-deps"] = [
@@ -588,6 +589,19 @@ ${s.description}
     if (!busy) respond(id, text);
     return id;
   },
+  runChanges: () =>
+    delay([
+      { step: 0, label: "before the run", at: new Date(t0).toISOString(), files: [] },
+      { step: 1, label: "write_file web/dashboard/src/App.tsx", at: new Date(t0 + MIN).toISOString(), files: ["M web/dashboard/src/App.tsx"] },
+      { step: 2, label: "write_file web/dashboard/src/ui/Badge.tsx", at: new Date(t0 + 2 * MIN).toISOString(), files: ["A web/dashboard/src/ui/Badge.tsx"] },
+    ]),
+  runDiff: (_runId, step) =>
+    delay(
+      step === 1
+        ? "--- a/web/dashboard/src/App.tsx\n+++ b/web/dashboard/src/App.tsx\n@@ -1,3 +1,4 @@\n import { lazy } from \"react\";\n+import { Badge } from \"./ui/Badge\";\n"
+        : "--- /dev/null\n+++ b/web/dashboard/src/ui/Badge.tsx\n@@ -0,0 +1,3 @@\n+export function Badge() {\n+  return null;\n+}\n",
+    ),
+  restoreRun: () => delay({ approvalId: "ap-restore", files: ["web/dashboard/src/App.tsx", "web/dashboard/src/ui/Badge.tsx"] }),
   async resumeRun(sessionId, runId) {
     patchTranscript(sessionId, (items) => [
       ...items.filter((i) => !(i.kind === "interrupted" && i.runId === runId)),

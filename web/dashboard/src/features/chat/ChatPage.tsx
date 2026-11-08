@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowDown, BookOpen, ChevronDown, PauseCircle, Download, ListChecks, Pencil, Pin, Trash2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowDown, BookOpen, ChevronDown, ChevronRight, GitCommitHorizontal, PauseCircle, Undo2, Download, ListChecks, Pencil, Pin, Trash2 } from "lucide-react";
 import { client, useCan, useIsRunning, usePlan, useQuestions, useSessions, useTranscript } from "../../data/client";
 import type { TranscriptItem, ViewMode } from "../../data/model";
 import { useUIStore } from "../../store";
@@ -11,6 +12,88 @@ import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
 import { QuestionTray } from "./QuestionTray";
 import { ToolGroup } from "./ToolGroup";
+
+function ChangesCard({ runId }: { runId: string }) {
+  const { data: cps } = useQuery({ queryKey: ["gubern", "changes", runId], queryFn: () => client.runChanges(runId) });
+  const [open, setOpen] = useState<number | undefined>();
+  const [diff, setDiff] = useState("");
+  const [asked, setAsked] = useState(false);
+  const canRun = useCan("agents:run");
+  const toast = useUIStore((s) => s.toast);
+  const steps = (cps ?? []).filter((c) => c.step > 0 && c.files.length > 0);
+  if (!steps.length) return null;
+  const files = new Set(steps.flatMap((c) => c.files.map((f) => f.slice(2))));
+  const show = async (step: number) => {
+    if (open === step) return setOpen(undefined);
+    setOpen(step);
+    setDiff("Loading…");
+    setDiff((await client.runDiff(runId, step).catch(() => "Couldn't load the diff.")) || "No changes.");
+  };
+  return (
+    <div className="rounded-xl border border-border bg-surface text-[13px]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
+        <GitCommitHorizontal className="h-4 w-4 text-muted" aria-hidden />
+        <span className="font-medium">
+          Changed {files.size} file{files.size === 1 ? "" : "s"}
+        </span>
+        <span className="text-muted">· checkpointed in git, your branch untouched</span>
+        {canRun && (
+          <button
+            type="button"
+            disabled={asked}
+            onClick={async () => {
+              try {
+                await client.restoreRun(runId, 0);
+                setAsked(true);
+                toast({ text: "Undo requested. Approve it in the Inbox (or on your phone) to restore the files.", tone: "info" });
+              } catch {
+                toast({ text: "Couldn't request the undo.", tone: "error" });
+              }
+            }}
+            className="ml-auto flex cursor-pointer items-center gap-1 rounded-md border border-border px-2 py-1 text-[12px] hover:border-warning/60 hover:text-warning disabled:opacity-60"
+          >
+            <Undo2 className="h-3.5 w-3.5" aria-hidden />
+            {asked ? "Waiting for approval" : "Undo these changes"}
+          </button>
+        )}
+      </div>
+      <ul>
+        {steps.map((c) => (
+          <li key={c.step} className="border-b border-border last:border-b-0">
+            <button
+              type="button"
+              onClick={() => void show(c.step)}
+              aria-expanded={open === c.step}
+              className="flex w-full cursor-pointer items-start gap-2 px-4 py-2 text-left hover:bg-accent"
+            >
+              <ChevronRight className={cx("mt-0.5 h-3.5 w-3.5 shrink-0 text-muted transition-transform", open === c.step && "rotate-90")} aria-hidden />
+              <span className="min-w-0 flex-1">
+                {c.files.map((f) => (
+                  <span key={f} className="block truncate font-mono text-[12px]">
+                    <span className={cx("mr-1.5", f.startsWith("A") ? "text-success" : f.startsWith("D") ? "text-danger" : "text-warning")}>{f[0]}</span>
+                    {f.slice(2)}
+                  </span>
+                ))}
+              </span>
+            </button>
+            {open === c.step && (
+              <pre className="max-h-80 overflow-auto border-t border-border bg-background px-4 py-2 font-mono text-[12px] leading-relaxed">
+                {diff.split("\n").map((l, i) => (
+                  <span
+                    key={i}
+                    className={cx("block", l.startsWith("+") && !l.startsWith("+++") ? "text-success" : l.startsWith("-") && !l.startsWith("---") ? "text-danger" : l.startsWith("@@") ? "text-ai-foreground" : "")}
+                  >
+                    {l || " "}
+                  </span>
+                ))}
+              </pre>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function InterruptedCard({ sessionId, runId }: { sessionId: string; runId: string }) {
   const canRun = useCan("agents:run");
@@ -72,6 +155,8 @@ function Item({
       );
     case "tools":
       return <ToolGroup tool={item.tool} steps={item.steps} viewMode={viewMode} />;
+    case "changes":
+      return <ChangesCard runId={item.runId} />;
     case "interrupted":
       return <InterruptedCard sessionId={sessionId} runId={item.runId} />;
     case "skill":

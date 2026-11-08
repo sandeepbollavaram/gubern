@@ -110,6 +110,14 @@ export interface SkillInstall {
   files: { path: string; size: number; sha256: string }[];
 }
 
+export interface RunCheckpoint {
+  step: number;
+  label: string;
+  at: string;
+  /** "M path", "A path" or "D path", changed since the previous checkpoint. */
+  files: string[];
+}
+
 export interface SkillList {
   skills: Skill[];
   /** Skills that failed to load, with the reason. */
@@ -122,6 +130,8 @@ export type TranscriptItem =
   | { kind: "tools"; id: string; tool: string; steps: ToolStep[] }
   | { kind: "approval"; id: string; approvalId: string }
   | { kind: "skill"; id: string; name: string; hash: string }
+  /** A run changed files in a git workspace; its checkpoints can be shown and undone. */
+  | { kind: "changes"; id: string; runId: string }
   /** The server stopped during this run; it can be resumed from its checkpoint. */
   | { kind: "interrupted"; id: string; runId: string }
   | { kind: "status"; id: string; text: string; tone: "ai" | "warning" | "danger" }
@@ -227,6 +237,11 @@ export interface GubernClient {
   stop(sessionId: string): void;
   /** Continues an interrupted run from its last checkpoint (Phase 3). */
   resumeRun(sessionId: string, runId: string): Promise<void>;
+  /** A run's git checkpoints (Phase 4). */
+  runChanges(runId: string): Promise<RunCheckpoint[]>;
+  runDiff(runId: string, step: number): Promise<string>;
+  /** Asks to restore the workspace to a checkpoint; it happens once approved. */
+  restoreRun(runId: string, step: number): Promise<{ approvalId: string; files: string[] }>;
   decide(approvalId: string, approve: boolean): Promise<void>;
   answer(setId: string, key: string, value: string): void;
   skipQuestion(setId: string, key: string): void;
