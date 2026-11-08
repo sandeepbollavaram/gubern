@@ -75,6 +75,34 @@ func (s *Server) agentRateLimiter() *security.HTTPRateLimiter { return s.agentLi
 type agentSubmitRequest struct {
 	Message   string `json:"message"`
 	SessionID string `json:"session_id"`
+	// Check is an /agent run's completion check (Phase 3): a command that
+	// must pass before the run counts as completed. Same as writing
+	// --check "<command>" in the message.
+	Check string `json:"check,omitempty"`
+}
+
+// maxCheckLen bounds a declared completion check.
+const maxCheckLen = 500
+
+// applyCheck adds a declared completion check to an /agent message. The
+// check goes through the same parsing (and, when it runs, the same approval)
+// as one typed with --check.
+func applyCheck(message, check string) (string, error) {
+	check = strings.TrimSpace(check)
+	if check == "" {
+		return message, nil
+	}
+	rest, ok := strings.CutPrefix(strings.TrimLeft(message, " "), "/agent ")
+	if !ok {
+		return "", errors.New("check applies only to /agent messages")
+	}
+	if len(check) > maxCheckLen || strings.ContainsAny(check, "\"\r\n") {
+		return "", fmt.Errorf("check must be one line of at most %d characters without double quotes", maxCheckLen)
+	}
+	if strings.Contains(" "+rest, " --check") {
+		return "", errors.New("the message already has --check; send one or the other")
+	}
+	return `/agent --check "` + check + `" ` + rest, nil
 }
 
 // agentSubmitResponse is the JSON (non-SSE) reply.
@@ -121,6 +149,12 @@ func (s *Server) handleAgentSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message is required", http.StatusBadRequest)
 		return
 	}
+	msg, err := applyCheck(req.Message, req.Check)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Message = msg
 	// A client-supplied session_id flows into a filesystem path in the memory
 	// store; reject anything that is not a plain id so it cannot traverse out
 	// of the session directory (production audit H1). An empty id is allowed —

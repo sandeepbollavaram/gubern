@@ -22,6 +22,7 @@ func TestParseAgentFlags(t *testing.T) {
 		{"--read-only explain main.go", "", "explain main.go", false, true},
 		{`--read-only --check "go vet ./..." look`, "go vet ./...", "look", false, true},
 		{`--check make --read-only look`, "make", "look", false, true},
+		{`--check "go vet ./..." --read-only look`, "go vet ./...", "look", false, true}, // as the API's declared check writes it
 		{"--read-only", "", "", false, true},
 		{"--read-onlyx look", "", "--read-onlyx look", false, false},
 		{"--check a --check b x", "", "", true, false},
