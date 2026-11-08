@@ -9,6 +9,35 @@ import "context"
 type runIDKey struct{}
 type resumeKey struct{}
 type workspaceKey struct{}
+type networkRequestKey struct{}
+type networkKey struct{}
+
+// WithNetworkRequest returns ctx carrying the network ("on" or "off") the
+// client asked for this run. It is a request, not a grant: the coordinator
+// decides (turning it on beyond the server's default needs an approval) and
+// records the outcome with WithNetwork.
+func WithNetworkRequest(ctx context.Context, network string) context.Context {
+	return context.WithValue(ctx, networkRequestKey{}, network)
+}
+
+// NetworkRequestFrom returns the network the client asked for, or "".
+func NetworkRequestFrom(ctx context.Context) string {
+	n, _ := ctx.Value(networkRequestKey{}).(string)
+	return n
+}
+
+// WithNetwork returns ctx carrying the network a run was granted. Only the
+// coordinator sets it, after deciding the request; tools read it.
+func WithNetwork(ctx context.Context, network string) context.Context {
+	return context.WithValue(ctx, networkKey{}, network)
+}
+
+// NetworkFrom returns the network a run was granted, or "" (the server's
+// default).
+func NetworkFrom(ctx context.Context) string {
+	n, _ := ctx.Value(networkKey{}).(string)
+	return n
+}
 
 // WithWorkspace returns ctx asking the run to work in dir, a workspace the
 // API resolved from its own list (never a client-supplied path).
@@ -45,8 +74,8 @@ func ResumeFrom(ctx context.Context) string {
 	return id
 }
 
-// CarryRun returns dst with src's event sink, run id, resume request and
-// workspace, for code that runs a request under a different lifecycle context (the
+// CarryRun returns dst with src's event sink, run id, resume request,
+// workspace and network request (never a grant), for code that runs a request under a different lifecycle context (the
 // agent runtime's) but must keep the request's run identity.
 func CarryRun(dst, src context.Context) context.Context {
 	dst = WithSink(dst, SinkFrom(src))
@@ -58,6 +87,9 @@ func CarryRun(dst, src context.Context) context.Context {
 	}
 	if ws := WorkspaceFrom(src); ws != "" {
 		dst = WithWorkspace(dst, ws)
+	}
+	if n := NetworkRequestFrom(src); n != "" {
+		dst = WithNetworkRequest(dst, n)
 	}
 	return dst
 }

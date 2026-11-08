@@ -13,8 +13,11 @@ type RunCheckpoint struct {
 	Check    string `json:"check,omitempty"`
 	ReadOnly bool   `json:"read_only,omitempty"`
 	// Workspace is the folder the run worked in; a resume must use it too.
-	Workspace string    `json:"workspace,omitempty"`
-	State     LoopState `json:"state"`
+	Workspace string `json:"workspace,omitempty"`
+	// Network is what the run was granted ("on" or "off"); a resume keeps
+	// it without asking again.
+	Network string    `json:"network,omitempty"`
+	State   LoopState `json:"state"`
 }
 
 // Message is the /agent command that restarts this run's task.

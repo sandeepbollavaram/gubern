@@ -408,6 +408,9 @@ var toolRisk = map[string]string{
 	"delete_file":    RiskHigh,
 	"docker_run":     RiskHigh,
 	"create_project": RiskHigh,
+	// Letting a run's commands reach the network when the server's default
+	// is off (Phase 4, M.4).
+	"network_access": RiskHigh,
 
 	"ssh_command": RiskCritical,
 }

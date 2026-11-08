@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sandeepbollavaram/vortex/internal/agentevents"
 	"github.com/sandeepbollavaram/vortex/internal/sandbox"
 )
 
@@ -430,7 +431,13 @@ func (t RunTerminalTool) Execute(ctx context.Context, params map[string]any) (an
 	cmd.Stderr = stderr
 	var box sandbox.Process
 	if t.cfg.Sandbox != nil {
-		if box, err = t.cfg.Sandbox.Prepare(cmd, t.cfg.sandboxPolicy(resolvedCwd)); err != nil {
+		policy := t.cfg.sandboxPolicy(resolvedCwd)
+		// The network this run was granted (M.4); only the coordinator sets
+		// it, after an approval when it widens the server's default.
+		if n := agentevents.NetworkFrom(ctx); n == string(sandbox.NetworkOn) || n == string(sandbox.NetworkOff) {
+			policy.Network = sandbox.Network(n)
+		}
+		if box, err = t.cfg.Sandbox.Prepare(cmd, policy); err != nil {
 			return nil, err
 		}
 		defer box.Close()

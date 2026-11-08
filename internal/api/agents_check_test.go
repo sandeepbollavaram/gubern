@@ -120,3 +120,43 @@ func TestSubmit_Workspace(t *testing.T) {
 		t.Errorf("runtime got workspaces %q", rt.got)
 	}
 }
+
+// ctxRuntime records the network request each submit carried.
+type ctxRuntime struct {
+	stubRuntime
+	mu  sync.Mutex
+	got []string
+}
+
+func (r *ctxRuntime) Submit(ctx context.Context, msg, sid string) (<-chan string, error) {
+	r.mu.Lock()
+	r.got = append(r.got, agentevents.NetworkRequestFrom(ctx))
+	r.mu.Unlock()
+	return r.stubRuntime.Submit(ctx, msg, sid)
+}
+
+// A submit's network is passed on as a request (never a grant), and only
+// "on" or "off" are accepted.
+func TestSubmit_NetworkRequest(t *testing.T) {
+	f := newAuthzFixture(t)
+	rt := &ctxRuntime{stubRuntime: stubRuntime{response: "ok"}}
+	f.s.SetAgentRuntime(rt)
+	_, operator := f.principal(t, authz.Person, "operator")
+	for i, body := range []string{
+		`{"message":"/agent fetch it","session_id":"net1","network":"on"}`,
+		`{"message":"/agent build it","session_id":"net2","network":"off"}`,
+		`{"message":"/agent build it","session_id":"net3"}`,
+	} {
+		if rec := f.do(http.MethodPost, "/api/agents/submit", operator, body); rec.Code != http.StatusOK {
+			t.Fatalf("submit %d = %d %s", i, rec.Code, rec.Body)
+		}
+	}
+	if rec := f.do(http.MethodPost, "/api/agents/submit", operator, `{"message":"/agent x","session_id":"net4","network":"allow-all"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("network allow-all = %d, want 400", rec.Code)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if strings.Join(rt.got, ",") != "on,off," {
+		t.Errorf("network requests = %q", rt.got)
+	}
+}

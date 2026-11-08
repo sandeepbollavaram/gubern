@@ -84,6 +84,8 @@ func (c *Coordinator) handleTeamLoop(ctx context.Context, sessionID, goal string
 	c.auditRunStarted(ctx, sessionID, runID, "team: "+goal, check, false)
 	catalog, skillFiles := c.skillCatalog(workDir)
 	approver := c.loopApprover(sessionID, emit)
+	// One network for the whole team run, decided before any command (M.4).
+	ctx = agentevents.WithNetwork(ctx, c.runNetwork(ctx, sessionID, "", approver, emit))
 	afterStep := c.workspaceCheckpoints(ctx, sessionID, runID, workDir, localTools, emit)
 
 	run := func(p RoleProfile, task string, verify func(context.Context) (bool, string)) LoopResult {

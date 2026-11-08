@@ -82,6 +82,10 @@ type agentSubmitRequest struct {
 	// Workspace names the folder an /agent run works in (GET /api/workspaces);
 	// empty means the server's default.
 	Workspace string `json:"workspace,omitempty"`
+	// Network asks for the run's network, "on" or "off" (Phase 4). It is a
+	// request: turning the network on beyond the server's default waits for
+	// an approval, and the run says what it got.
+	Network string `json:"network,omitempty"`
 }
 
 // maxCheckLen bounds a declared completion check.
@@ -176,6 +180,14 @@ func (s *Server) handleAgentSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 		// The folder rides in the request context, which the run keeps.
 		r = r.WithContext(agentevents.WithWorkspace(r.Context(), dir))
+	}
+	switch req.Network {
+	case "":
+	case "on", "off":
+		r = r.WithContext(agentevents.WithNetworkRequest(r.Context(), req.Network))
+	default:
+		http.Error(w, `network must be "on" or "off"`, http.StatusBadRequest)
+		return
 	}
 	// A client-supplied session_id flows into a filesystem path in the memory
 	// store; reject anything that is not a plain id so it cannot traverse out

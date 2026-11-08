@@ -234,6 +234,8 @@ type Coordinator struct {
 	cfg CoordinatorConfig
 
 	mu            sync.Mutex
+	netDefault    string // sandbox default network ("on"/"off"); see run_network.go
+	netEnforced   bool   // whether this server's sandbox enforces it
 	checkpoints   RunCheckpointStore // nil: /agent runs are not checkpointed
 	// Per-run workspaces (see workspace_tools.go).
 	workspaceTools WorkspaceToolsFunc
@@ -2309,6 +2311,8 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 	// after checking access; message text can't).
 	var resume *LoopState
 	var checkpoint func(LoopState)
+	resumedNetwork := ""
+	var setBaseNetwork func(string) // records the granted network in the checkpoint
 	if logID := agentevents.RunIDFrom(ctx); logID != "" {
 		runID = logID
 		if store := c.runCheckpoints(); store != nil {
@@ -2323,8 +2327,10 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 				}
 				st := cp.State
 				resume = &st
+				resumedNetwork = cp.Network
 			}
 			base := RunCheckpoint{Session: sessionID, Task: task, Check: check, ReadOnly: flags.readOnly, Workspace: workDir}
+			setBaseNetwork = func(n string) { base.Network = n }
 			checkpoint = func(st LoopState) {
 				base.State = st
 				if err := store.SaveCheckpoint(runID, base); err != nil {
@@ -2340,6 +2346,15 @@ func (c *Coordinator) handleAgentLoop(ctx context.Context, sessionID, task strin
 	}
 	catalog, skillFiles := c.skillCatalog(workDir)
 	approver := c.loopApprover(sessionID, emit)
+	// The run's network, decided before any command can run (M.4). A
+	// read-only run runs no commands, so it isn't asked.
+	if !flags.readOnly {
+		network := c.runNetwork(ctx, sessionID, resumedNetwork, approver, emit)
+		ctx = agentevents.WithNetwork(ctx, network)
+		if setBaseNetwork != nil {
+			setBaseNetwork(network)
+		}
+	}
 	var verify func(context.Context) (bool, string)
 	if check != "" {
 		inner := c.loopCheck(localTools, sessionID, check, approver, emit)

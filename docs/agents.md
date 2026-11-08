@@ -300,6 +300,21 @@ command starts suspended and is assigned to its job before it runs, so nothing
 it starts escapes the job. Windows containment is not isolation: an
 AppContainer would add a file-system and network fence, and is a later step.
 
+**Network per run.** `network` is the default. A run can ask for its own
+(`"network": "on"` or `"off"` on `POST /api/agents/submit`, or the Network
+control in the dashboard and app composers):
+
+- asking for `off` always works: it only narrows;
+- asking for `on` when the default is `off` opens a HIGH-risk
+  `network_access` approval before any command runs; if it isn't approved,
+  the run continues with the network off and says so;
+- where the sandbox can't enforce network policy (Windows, or no sandbox)
+  nothing is asked and the run is told the setting isn't enforced.
+
+The request is never read from message text, and only the coordinator's
+decision reaches the terminal tool. A resumed run keeps the network it was
+granted. `/agent --read-only` runs no commands and isn't asked.
+
 Each `run_terminal` result records `"sandbox": "<adapter>"`. Commands run by
 background sub-agents (`run_command`) are not wrapped yet. Approval, the
 workspace check, the scrubbed environment and the process-tree kill apply

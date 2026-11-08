@@ -329,6 +329,9 @@ func resolveLocalFSConfig(cfg *config.Config, workDir string) (agents.LocalFSCon
 	}
 	fs.Sandbox = box
 	fs.SandboxInfo = info
+	if fs.SandboxConfig.Network == "" {
+		fs.SandboxConfig.Network = sandbox.NetworkOn
+	}
 	if fs.SandboxConfig.MaxProcesses <= 0 {
 		fs.SandboxConfig.MaxProcesses = sandbox.DefaultLimits.MaxProcesses
 	}
@@ -1109,6 +1112,10 @@ func runStart(ctx context.Context, pidfile string) error {
 	if agentRuntime != nil {
 		agentRuntime.Coordinator().SetApprovals(approvalSvc)
 		agentRuntime.Coordinator().SetRunCheckpoints(runCheckpoints{log: eventLog})
+		// Per-run network (M.4): widening the default needs an approval,
+		// and only where the sandbox can enforce it.
+		agentRuntime.Coordinator().SetNetworkPolicy(string(localFS.SandboxConfig.Network),
+			localFS.Sandbox != nil && localFS.SandboxInfo.Network != "not enforced")
 		wireChannelApprovals(approvalSvc, agentRuntime, &msg, log)
 		adapter := &agentRuntimeAdapter{rt: agentRuntime}
 		apiSrv.SetAgentRuntime(adapter)
