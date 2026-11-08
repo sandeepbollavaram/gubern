@@ -455,7 +455,19 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **App:** a sandbox badge in the agent composer, and a Sandbox panel in Operate.
   - On the emulator, re-paired with the scratch server, both showed "Contained (Windows)" with the server's limits.
 
+**M.4: network per run. Done.**
+- **Commits:** `d4fe651` (server), `38d1662` + `1f22924` (dashboard), `ae6ff80` (app), plus a fix to how Windows reports network (below).
+- **What it does:** a submit may ask for `"network": "on"` or `"off"`. It is a request, not a grant; the coordinator decides before any command runs.
+  - Narrowing to off always works.
+  - Widening to on, when the default is off, opens a HIGH-risk `network_access` approval. If it is rejected, the run continues offline and says so.
+  - Where the sandbox can't enforce network policy, nothing is asked and the run is told so.
+  - Only the granted value reaches `run_terminal`; the checkpoint keeps it for a resume. Team runs follow the same rule.
+- **Tests:** a rules table (9 cases) and an end-to-end `/agent` run with a recording sandbox (4 cases), checking the network each command actually got. Making the tool read the client's request instead of the grant fails the "rejected" case. There is also an API validation test.
+- **Live check found a bug:** Windows reported its network as "on", so the server thought network policy was enforceable there. A run asking for network off was told "loopback only" while it still had the network. Fixed: Windows always reports "not enforced", and the live run now says so.
+- **Default:** still "on". Flipping it to "off" is a product decision: it would make every Linux run without an approval offline.
+
 **Next: the rest of M.** Remaining:
-- network policy per run (M.4);
-- wrapping `run_command` and Forge builds;
-- the AppContainer spike.
+- wrapping `run_command` (sub-agents) and Forge builds;
+- the AppContainer spike (Windows file and network fence).
+
+Then Phase 5: N (MCP client and connectors).
