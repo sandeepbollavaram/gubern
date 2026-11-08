@@ -408,6 +408,27 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **Live check:** a relative write landed in the chosen folder, not the default one.
 - **Not verified:** the dashboard and app pickers in a browser or on the emulator. The browser tool hit a usage limit and `adb` stopped responding.
 
-**Next:**
-- **L.4** team roles as loop profiles;
-- **L.5** the kill-9 harness.
+**L.4: team roles as loop profiles. Done.**
+- **Commits:** `f5991b2`; checks for `/team` in `ed8c1fd`.
+- **What it does:**
+  - coder, tester and reviewer run on the one loop;
+  - the tester's commands go through approvals, which fixes T32;
+  - each role gets its own toolset.
+- **Live check:** a team run ended `completed`.
+
+**L.5: kill-9 gate. Done.** (`872c6e6`)
+- 20 runs, 15 hard-killed and 10 resumed; every side effect happened at most once.
+- The test fails, as it should, when resume re-runs in-flight commands.
+
+**Phase 3 gate:** met.
+- Zero duplicate side effects under kill -9.
+- Every run ends verified, explicitly partial or done (unverified).
+- The team tester runs commands through approvals.
+- The phone can resume a run; this was unit-tested, but not yet tried live on the device.
+
+**Next: M, the safe workspace runtime.** Workspaces are already done. Remaining:
+- git checkpoints per edit, with restore;
+- sandbox adapters for Linux and Windows;
+- network policy per run;
+- the escape suites;
+- the Workspaces page, and diffs in run detail.
