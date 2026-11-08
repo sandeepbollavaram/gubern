@@ -380,12 +380,22 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **Events:** each check attempt is a `check_result` event, and the run reports a `run_outcome`.
 - **Live check:** a passing check ended `completed`; a failing one ended `partial` after three attempts.
 
-**Next: L.2, checkpoint and resume after restart.**
-- The loop saves its transcript, step and budget after each step.
-- `POST /api/runs/{id}/resume` continues an `interrupted` run under its effect scope, so side effects are not repeated.
-- Resume buttons in the dashboard and app.
+**L.2: checkpoint and resume. Done.**
+- **Commits:**
 
-**After that:**
-- **L.3** checks declared in the submit API;
+  | Commit | What |
+  |---|---|
+  | `7925287` | Loop checkpoints and resume |
+  | `c2cdea9` | Server and API |
+  | `4918be3` | Dashboard and app Resume (`dist`: `0cf67a1`) |
+  | `87beeec` | Fix: a crashed server's pid file blocked restart on Windows |
+
+- **Live check:**
+  - a run waiting for a write approval was hard-killed;
+  - after restart it showed `interrupted`;
+  - resume asked for the approval again, and the file was written exactly once;
+  - a second resume was refused.
+
+**Next: L.3, checks declared in the submit API.** Then:
 - **L.4** team roles as loop profiles;
 - **L.5** the kill-9 harness.
