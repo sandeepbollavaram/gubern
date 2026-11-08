@@ -548,7 +548,9 @@ extension GubernReads on GubernApi {
   /// Starts a run and streams its events (SSE).
   /// [check], in Agent mode, is a command that must pass before the run
   /// counts as completed (sent as the request's declared check).
-  Future<RunStream> submit(String sessionId, String text, ChatMode mode, {String? check, String? workspace}) async {
+  /// [network] asks for the run's network ("on" or "off"); widening the
+  /// server's default waits for an approval when the run starts.
+  Future<RunStream> submit(String sessionId, String text, ChatMode mode, {String? check, String? workspace, String? network}) async {
     final req = await _streamRequest('POST', '/api/agents/submit?events=1');
     req.headers.set('Idempotency-Key', _randomHex(12));
     req.headers.contentType = ContentType.json;
@@ -558,6 +560,7 @@ extension GubernReads on GubernApi {
       'session_id': sessionId,
       if ((mode == ChatMode.agent || mode == ChatMode.team) && c.isNotEmpty) 'check': c,
       if (workspace != null && workspace.isNotEmpty && workspace != 'default') 'workspace': workspace,
+      if ((mode == ChatMode.agent || mode == ChatMode.team) && (network == 'on' || network == 'off')) 'network': network,
     })));
     final res = await req.close();
     await _checkStream(res);

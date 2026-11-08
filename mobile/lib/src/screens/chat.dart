@@ -126,13 +126,13 @@ class ChatController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> send(String text, ChatMode mode, {String? check, String? workspace}) async {
+  Future<void> send(String text, ChatMode mode, {String? check, String? workspace, String? network}) async {
     final sid = sessionId ??= newSessionId();
     items.add(UserItem(_k('u'), text));
     running = true;
     _changed();
     try {
-      final rs = await api.submit(sid, text, mode, check: check, workspace: workspace);
+      final rs = await api.submit(sid, text, mode, check: check, workspace: workspace, network: network);
       runId = rs.runId;
       _lastSeq = 0;
       await _consume(rs);
@@ -342,6 +342,11 @@ class _ChatScreenState extends State<ChatScreen> {
   List<WorkspaceInfo> _workspaces = const [];
   String _workspace = 'default';
   SandboxInfo? _sandbox;
+  /// The run's network when the person changed it from the server's default.
+  String? _netChoice;
+
+  /// The server's default network, or null where it can't be enforced.
+  String? get _netDefault => _sandbox != null && (_sandbox!.network == 'on' || _sandbox!.network == 'off') ? _sandbox!.network : null;
 
   @override
   void initState() {
@@ -428,7 +433,8 @@ class _ChatScreenState extends State<ChatScreen> {
     HapticFeedback.selectionClick();
     _input.clear();
     final check = (_mode == ChatMode.agent || _mode == ChatMode.team) && _showCheck ? _check.text.trim() : '';
-    unawaited(_c.send(t, _mode, check: check.isEmpty ? null : check, workspace: _workspace));
+    final net = _netChoice ?? _netDefault;
+    unawaited(_c.send(t, _mode, check: check.isEmpty ? null : check, workspace: _workspace, network: net != _netDefault ? net : null));
   }
 
   Future<void> _review(ApprovalItem it) async {
@@ -532,6 +538,11 @@ class _ChatScreenState extends State<ChatScreen> {
             showCheck: _showCheck,
             workspace: _workspace,
             sandbox: _sandbox,
+            network: _netChoice ?? _netDefault,
+            networkNeedsApproval: _netDefault == 'off' && _netChoice == 'on',
+            onToggleNetwork: _netDefault == null
+                ? null
+                : () => setState(() => _netChoice = (_netChoice ?? _netDefault) == 'on' ? 'off' : 'on'),
             onPickWorkspace: _workspaces.length > 1 ? _pickWorkspace : null,
             onToggleCheck: () => setState(() {
               _showCheck = !_showCheck;
@@ -1209,6 +1220,9 @@ class _Composer extends StatelessWidget {
     required this.onToggleCheck,
     required this.workspace,
     required this.sandbox,
+    required this.network,
+    required this.networkNeedsApproval,
+    required this.onToggleNetwork,
     required this.onPickWorkspace,
     required this.onSend,
     required this.onStop,
@@ -1221,6 +1235,10 @@ class _Composer extends StatelessWidget {
   final String workspace;
   /// Where the run's commands will run; null when the server doesn't say.
   final SandboxInfo? sandbox;
+  /// The run's network ("on"/"off"); null where the server can't enforce it.
+  final String? network;
+  final bool networkNeedsApproval;
+  final VoidCallback? onToggleNetwork;
   /// Null when there is only one workspace to choose from.
   final VoidCallback? onPickWorkspace;
   final FocusNode focus;
@@ -1313,6 +1331,38 @@ class _Composer extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (network != null && onToggleNetwork != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Semantics(
+                              button: true,
+                              toggled: network == 'on',
+                              label: network == 'on' ? 'Network on for this run' : 'Network off for this run',
+                              child: GestureDetector(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  onToggleNetwork!();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: networkNeedsApproval ? g.warn.withValues(alpha: .6) : g.border),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(network == 'on' ? Icons.public_rounded : Icons.public_off_rounded, size: 15,
+                                          color: networkNeedsApproval ? g.warn : g.muted),
+                                      const SizedBox(width: 6),
+                                      Text(networkNeedsApproval ? 'Net · ask' : (network == 'on' ? 'Net on' : 'Net off'),
+                                          style: TextStyle(fontSize: 13, color: networkNeedsApproval ? g.warn : g.muted)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         const Spacer(),
                         if (sandbox != null) _SandboxBadge(info: sandbox!),
                       ],
