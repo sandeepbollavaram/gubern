@@ -499,3 +499,51 @@ func TestStdio_ReadResource(t *testing.T) {
 		t.Error("resource read not audited")
 	}
 }
+
+// A local server that dies is reconnected automatically (a new process);
+// one turned off on purpose is not.
+func TestStdio_ReconnectsAfterACrash(t *testing.T) {
+	dir := t.TempDir()
+	st := NewStore(filepath.Join(dir, "c.json"))
+	al := &auditLog{}
+	m := New(Config{Store: st, StateDir: dir, Version: "test", Audit: al.fn, RetryBase: 200 * time.Millisecond, RetryMax: time.Second})
+	t.Cleanup(m.Close)
+	addEnabled(t, st, stdioConnector(t, "fake"))
+	if err := m.Connect(context.Background(), "fake"); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	pid := m.live["fake"].pid
+	m.mu.Unlock()
+	p, err := os.FindProcess(pid)
+	if err != nil || pid == 0 {
+		t.Fatalf("no server process: %d %v", pid, err)
+	}
+	_ = p.Kill() // the server crashes
+	deadline := time.Now().Add(15 * time.Second)
+	var newPid int
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		if lc := m.live["fake"]; lc != nil && lc.status.State == "connected" && lc.pid != pid {
+			newPid = lc.pid
+		}
+		m.mu.Unlock()
+		if newPid != 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if newPid == 0 || !al.has("mcp.disconnected:fake") {
+		t.Fatalf("not reconnected after the crash (status %+v, audit %v)", m.Status("fake"), al.got)
+	}
+	if toolByName(m.AgentTools(), "mcp__fake__echo") == nil {
+		t.Error("tools not back after reconnecting")
+	}
+
+	// Turned off on purpose: no reconnect.
+	m.Disconnect("fake")
+	time.Sleep(time.Second)
+	if s := m.Status("fake"); s.State != "disabled" {
+		t.Errorf("a deliberate disconnect came back: %+v", s.State)
+	}
+}

@@ -39,8 +39,10 @@ because it starts a program or opens a connection, an approval (HIGH risk)
 that shows the exact command and arguments or URL; it is enabled only if
 the connector is still the approved version. Enabled connectors connect at
 start-up, after approval and on `reconnect`; a failure is recorded on the
-connector and is never fatal to the server. There is no automatic retry
-yet: a dropped local server stays down until `reconnect` (gap). `disable` closes the session and
+connector and is never fatal to the server. A connection that drops
+without being turned off (a crashed local server, a remote that went away)
+is recorded, audited (`mcp.disconnected`) and reconnected with back-off
+(2 s doubling to 5 min) while the connector stays enabled. `disable` closes the session and
 stops the process. `remove` disables and deletes the record and its
 credential references.
 
@@ -143,7 +145,9 @@ discovery and normalization, namespacing, approval-gated calls bound to the
 connector version, `allow`/`ask`/`deny`, read-only exclusion, resources,
 credentials through the secret store, the API with scopes, the enable
 approval, the dashboard page. Commits `ae6a512`, `dd69a86`, `477930c`,
-`347c77c`, and the resources commit.
+`347c77c`, `388c7e0` (resources), and automatic reconnect.
+
+Race detector: `go test -race ./internal/connectors/` passes on Linux.
 
 Tests: `go test ./internal/connectors/` (15 tests, a fake server built from
 the SDK, run on Windows and on Linux as root and as nobody),
@@ -152,7 +156,7 @@ add, approve enable, connect in the job-object sandbox, an `/agent` call
 asking a HIGH-risk approval, the model receiving the labelled output, a
 read-only run without the tool, reconnect after restart.
 
-Gaps: no automatic reconnect; HTTP connectors can't reach private-network
+Gaps: HTTP connectors can't reach private-network
 (LAN) servers; Windows local connectors are contained, not isolated (M.8);
 no prompts; the dashboard was checked with mock data in a browser and the
 real API by script (no browser sign-in against the real server); the mobile

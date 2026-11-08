@@ -519,7 +519,7 @@ Updated 2026-11-08 04:35 IST. Local commits only.
 - **Tools** are named `mcp__<connector>__<tool>`. Calls are approval-gated through the shared service and bound to the connector version; read-only runs never get them.
 - **Results** are capped and labelled as third-party data.
 - **Tested:** 15 connector tests on Windows and Linux, an API authorization test, and a live check on the real server.
-- **Gaps:** no automatic reconnect, no LAN HTTP servers, Windows local connectors only contained, no prompts, no mobile screen.
+- **Gaps:** no LAN HTTP servers, Windows local connectors only contained, no prompts, no mobile screen.
 
 **Next: O (browser), which needs decision D5; or M.8 (AppContainer implementation).**
 

@@ -43,6 +43,9 @@ type Config struct {
 	// ConnectTimeout bounds connecting and discovery (default 30s);
 	// CallTimeout bounds one tool call (default 60s).
 	ConnectTimeout, CallTimeout time.Duration
+	// RetryBase is the first wait before reconnecting a connection that
+	// dropped (default 2s); it doubles up to RetryMax (default 5m).
+	RetryBase, RetryMax time.Duration
 }
 
 // FullToolName is the name agents see: mcp__<connector>__<tool>. Connector
@@ -84,15 +87,17 @@ type Status struct {
 
 // Manager runs the enabled connectors.
 type Manager struct {
-	cfg  Config
-	mu   sync.Mutex
-	live map[string]*liveConn
+	cfg    Config
+	mu     sync.Mutex
+	live   map[string]*liveConn
+	closed bool // server shutting down: no reconnects
 }
 
 type liveConn struct {
 	conn     Connector
 	session  *mcp.ClientSession
 	stop     func() // ends the local process (nil for http)
+	pid      int    // the local server's process id (0 for http)
 	stderr   *tailBuffer
 	status   Status
 	hasRes   bool // the server offers resources
@@ -111,6 +116,12 @@ func New(cfg Config) *Manager {
 	}
 	if cfg.CallTimeout <= 0 {
 		cfg.CallTimeout = 60 * time.Second
+	}
+	if cfg.RetryBase <= 0 {
+		cfg.RetryBase = 2 * time.Second
+	}
+	if cfg.RetryMax <= 0 {
+		cfg.RetryMax = 5 * time.Minute
 	}
 	return &Manager{cfg: cfg, live: map[string]*liveConn{}}
 }
@@ -180,7 +191,57 @@ func (m *Manager) Connect(ctx context.Context, id string) error {
 		return err
 	}
 	m.audit("mcp.connected", id, map[string]any{"server": lc.status.Server, "server_version": lc.status.ServerVer, "tools": len(lc.tools), "sandbox": lc.sandbox})
+	go m.watch(id, lc)
 	return nil
+}
+
+// watch waits for lc's session to end. If nobody ended it on purpose (the
+// connector is still current, enabled, and the server isn't stopping), it
+// records the drop and reconnects with back-off until it succeeds or the
+// connector is turned off.
+func (m *Manager) watch(id string, lc *liveConn) {
+	lc.closedMu.Lock()
+	s := lc.session
+	lc.closedMu.Unlock()
+	if s == nil {
+		return
+	}
+	_ = s.Wait()
+	current := func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return !m.closed && m.live[id] == lc
+	}
+	if !current() {
+		return // disconnected on purpose
+	}
+	m.mu.Lock()
+	lc.status.State, lc.status.Error = "error", "connection lost"
+	m.mu.Unlock()
+	m.audit("mcp.disconnected", id, map[string]any{"reason": "connection lost"})
+	m.cfg.Log.Warn("mcp connector connection lost; reconnecting", "connector", id)
+	wait := m.cfg.RetryBase
+	for current() {
+		time.Sleep(wait)
+		if !current() {
+			return
+		}
+		if c, err := m.cfg.Store.Get(id); err != nil || !c.Enabled {
+			return
+		}
+		if err := m.Connect(context.Background(), id); err == nil {
+			return // Connect started a new watcher
+		}
+		m.mu.Lock()
+		// Connect replaced the entry; keep retrying on behalf of the new one.
+		if nl := m.live[id]; nl != nil {
+			lc = nl
+		}
+		m.mu.Unlock()
+		if wait *= 2; wait > m.cfg.RetryMax {
+			wait = m.cfg.RetryMax
+		}
+	}
 }
 
 func (m *Manager) connect(ctx context.Context, lc *liveConn) error {
@@ -286,6 +347,7 @@ func (m *Manager) startLocal(lc *liveConn) (mcp.Transport, func(), string, error
 			return nil, nil, "", err
 		}
 	}
+	lc.pid = cmd.Process.Pid
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
@@ -447,6 +509,7 @@ func (m *Manager) closeLive(lc *liveConn) {
 // Close disconnects everything (server shutdown).
 func (m *Manager) Close() {
 	m.mu.Lock()
+	m.closed = true
 	ids := make([]string, 0, len(m.live))
 	for id := range m.live {
 		ids = append(ids, id)
