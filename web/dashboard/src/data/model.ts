@@ -110,6 +110,33 @@ export interface SkillInstall {
   files: { path: string; size: number; sha256: string }[];
 }
 
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  isDefault: boolean;
+  exists: boolean;
+}
+
+/** The OS boundary terminal commands run in, as the server reports it. */
+export interface SandboxInfo {
+  /** "Isolated (Linux)", "Contained (Windows)" or "Not sandboxed". */
+  label: string;
+  adapter: string;
+  level: "isolated" | "contained" | "none";
+  platform: string;
+  mode: string;
+  /** "on", "off" or "not enforced". */
+  network: string;
+  enforced: string[];
+  notEnforced: string[];
+  reason?: string;
+}
+
+export interface WorkspaceList {
+  workspaces: WorkspaceEntry[];
+  sandbox?: SandboxInfo;
+}
+
 export interface RunCheckpoint {
   step: number;
   label: string;
@@ -217,6 +244,10 @@ export interface GubernClient {
   outputs(): Promise<Output[]>;
   models(): Promise<ModelInfo[]>;
   workspaces(): Promise<string[]>;
+  /** The workspace folders with their paths, and the sandbox commands run in (Phase 4). */
+  workspaceList(): Promise<WorkspaceList>;
+  /** Stops offering a workspace to runs (the folder itself is untouched). */
+  removeWorkspace(name: string): Promise<void>;
   /** Adds a folder as a workspace (workspaces:manage); returns its name. */
   addWorkspace(path: string): Promise<string>;
   skills(): Promise<SkillList>;

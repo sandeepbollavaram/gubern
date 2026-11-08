@@ -12,6 +12,8 @@ import type {
   ModelInfo,
   Output,
   RunCheckpoint,
+  SandboxInfo,
+  WorkspaceList,
   Skill,
   SkillInstall,
   SkillList,
@@ -371,6 +373,49 @@ class HttpClient implements GubernClient {
     const names = b.workspaces.filter((w) => w.exists).map((w) => w.name);
     this.workspaceNames = new Set(names);
     return names.length ? names : ["default"];
+  };
+
+  workspaceList = async (): Promise<WorkspaceList> => {
+    const b = await apiJSON<{
+      workspaces: { name: string; path: string; default?: boolean; exists: boolean }[];
+      sandbox?: {
+        label: string;
+        adapter: string;
+        level: SandboxInfo["level"];
+        platform: string;
+        mode: string;
+        network: string;
+        enforced: string[] | null;
+        not_enforced: string[] | null;
+        reason?: string;
+      };
+    }>("/api/workspaces");
+    const s = b.sandbox;
+    return {
+      workspaces: b.workspaces.map((w) => ({ name: w.name, path: w.path, isDefault: !!w.default, exists: w.exists })),
+      sandbox: s && {
+        label: s.label,
+        adapter: s.adapter,
+        level: s.level,
+        platform: s.platform,
+        mode: s.mode,
+        network: s.network,
+        enforced: s.enforced ?? [],
+        notEnforced: s.not_enforced ?? [],
+        reason: s.reason || undefined,
+      },
+    };
+  };
+
+  removeWorkspace = async (name: string): Promise<void> => {
+    const path = `/api/workspaces/${encodeURIComponent(name)}`;
+    const res = await authFetch(path, { method: "DELETE" }); // 204, no body
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new HttpError(path, res.status, undefined, body.error);
+    }
+    this.workspaceNames.delete(name);
+    this.changed();
   };
 
   addWorkspace = async (path: string): Promise<string> => {

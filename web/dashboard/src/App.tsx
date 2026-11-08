@@ -13,6 +13,7 @@ const Home = lazy(() => import("./features/home/Home").then((m) => ({ default: m
 const ChatPage = lazy(() => import("./features/chat/ChatPage").then((m) => ({ default: m.ChatPage })));
 const Inbox = lazy(() => import("./features/inbox/Inbox").then((m) => ({ default: m.Inbox })));
 const Outputs = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Outputs })));
+const Workspaces = lazy(() => import("./features/library/Workspaces").then((m) => ({ default: m.Workspaces })));
 const Skills = lazy(() => import("./features/library/Skills").then((m) => ({ default: m.Skills })));
 const Automations = lazy(() => import("./features/library/Library").then((m) => ({ default: m.Automations })));
 
@@ -20,7 +21,6 @@ const Automations = lazy(() => import("./features/library/Library").then((m) => 
 const Overview = lazy(() => import("./pages/Overview").then((m) => ({ default: m.Overview })));
 const RoutesPage = lazy(() => import("./pages/Routes").then((m) => ({ default: m.RoutesPage })));
 const RouteBuilder = lazy(() => import("./pages/RouteBuilder").then((m) => ({ default: m.RouteBuilder })));
-const Namespaces = lazy(() => import("./pages/Namespaces").then((m) => ({ default: m.Namespaces })));
 const Metrics = lazy(() => import("./pages/Metrics").then((m) => ({ default: m.Metrics })));
 const Nodes = lazy(() => import("./pages/Nodes").then((m) => ({ default: m.Nodes })));
 const Plugins = lazy(() => import("./pages/Plugins").then((m) => ({ default: m.Plugins })));
@@ -73,7 +73,7 @@ export default function App() {
             <Route path="outputs" element={<Outputs />} />
             <Route path="automations" element={<Automations />} />
             <Route path="skills" element={<Skills />} />
-            <Route path="workspaces" element={legacy("Workspaces", "Namespaces and the folders agents may work in.", <Namespaces />)} />
+            <Route path="workspaces" element={<Workspaces />} />
 
             <Route path="operate">
               <Route index element={legacy("Overview", "Live state of this Gubern server.", <Overview />)} />

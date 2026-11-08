@@ -345,7 +345,7 @@ export function Composer({ draftKey, running, onSend, onStop, autoFocus, placeho
   );
 }
 
-function AddFolderDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: (name: string) => void }) {
+export function AddFolderDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: (name: string) => void }) {
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();

@@ -529,6 +529,37 @@ export const mockClient: GubernClient = {
       { id: "llama3.1:8b", label: "Llama 3.1 8B", purpose: "Runs locally through Ollama; no cost", provider: "Ollama" },
     ]),
   workspaces: () => delay([...mockWorkspaces]),
+  workspaceList: () =>
+    delay({
+      workspaces: mockWorkspaces.map((name, i) => ({
+        name: i === 0 ? "default" : name.split("/").pop()!,
+        path: name.replace("~", "/home/sandy"),
+        isDefault: i === 0,
+        exists: name !== "~/projects/site",
+      })),
+      sandbox: {
+        label: "Isolated (Linux)",
+        adapter: "bubblewrap",
+        level: "isolated" as const,
+        platform: "Linux",
+        mode: "auto",
+        network: "on",
+        enforced: [
+          "only the workspace is writable",
+          "home folder and server state are not visible (commands get a private home)",
+          "system folders are read-only",
+          "separate process namespace; the tree dies with the command",
+          "at most 256 processes",
+        ],
+        notEnforced: ["memory cap (needs cgroups)", "system call filter (seccomp)"],
+      },
+    }),
+  removeWorkspace: (name) => {
+    const i = mockWorkspaces.findIndex((w, j) => j > 0 && w.split("/").pop() === name);
+    if (i > 0) mockWorkspaces.splice(i, 1);
+    emit();
+    return delay(undefined);
+  },
   addWorkspace: (path) => {
     const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop()?.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "folder";
     mockWorkspaces.push(name);
